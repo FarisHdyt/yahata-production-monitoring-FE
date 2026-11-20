@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yahata Production Monitoring</title>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div class="logo">
+            <h2>YAHATA</h2>
+            <p>Production System</p>
+        </div>
+
+        <nav>
+            <a href="#" data-page="dashboard" class="active">Dashboard</a>
+            <a href="#" data-page="production">Production</a>
+            <a href="#" data-page="downtime">Downtime</a>
+            <a href="#" data-page="shift">Shift &amp; PIC</a>
+            <a href="#" data-page="reports">Reports</a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <p>Header Machine</p>
+            <span>Machine 01</span>
+        </div>
+    </aside>
+
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+
+        <!-- PAGE: DASHBOARD -->
+        <div class="page active" id="page-dashboard">
+
+            <!-- HEADER -->
+            <header class="topbar">
+                <div>
+                    <h1>Production Dashboard</h1>
+                    <p>Daily Production &amp; Downtime Overview</p>
+                </div>
+
+                <div class="user-info">
+                    <span>●</span>
+                    <div>
+                        <strong>Administrator</strong>
+                        <p>Production Monitoring</p>
+                    </div>
+                </div>
+            </header>
+
+
+            <!-- MACHINE STATUS -->
+            <section class="machine-status">
+                <div>
+                    <p>Machine Status</p>
+                    <h2 id="dashboard-machine-status" class="status-pill">-</h2>
+                </div>
+
+                <div>
+                    <p>Current Shift</p>
+                    <h2 id="dashboard-current-shift">-</h2>
+                </div>
+
+                <div>
+                    <p>Current PIC</p>
+                    <h2 id="dashboard-current-pic">Belum diisi</h2>
+                </div>
+
+                <div>
+                    <p>Machine</p>
+                    <h2 id="dashboard-machine-name">Header 01</h2>
+                </div>
+            </section>
+
+
+            <!-- KPI CARDS -->
+            <div class="section-heading">
+                <h2>Today's Performance</h2>
+                <p id="dashboard-date-label">-</p>
+            </div>
+            <section class="kpi-container">
+                <div class="kpi-card">
+                    <p>Actual Production</p>
+                    <h2 id="dashboard-actual">Belum diinput</h2>
+                    <span>Pieces · shift selesai</span>
+                </div>
+                <div class="kpi-card">
+                    <p>Production Target</p>
+                    <h2 id="dashboard-target">-</h2>
+                    <span>Pieces · shift selesai</span>
+                </div>
+                <div class="kpi-card">
+                    <p>Productivity</p>
+                    <h2 id="dashboard-productivity">-</h2>
+                    <span>Actual / Target</span>
+                </div>
+                <div class="kpi-card">
+                    <p>Efficiency</p>
+                    <h2 id="dashboard-efficiency">-</h2>
+                    <span>Operating Time / Planned Time</span>
+                </div>
+            </section>
+
+
+            <!-- CONTENT AREA -->
+            <section class="content-grid">
+
+                <div class="panel">
+                    <h3>Production Overview</h3>
+                    <div id="dashboard-production-overview" class="overview-content"></div>
+                </div>
+
+                <div class="panel">
+                    <h3>Downtime Summary</h3>
+                    <div id="dashboard-downtime-summary"></div>
+                </div>
+
+            </section>
+
+        </div>
+
+
+        <!-- PAGE: PRODUCTION -->
+        <div class="page" id="page-production">
+
+            <header class="topbar">
+                <div>
+                    <h1>Production Monitoring</h1>
+                    <p id="production-date-text">Ringkasan produksi harian Header 01</p>
+                </div>
+            </header>
+
+            <section class="kpi-container">
+                <div class="kpi-card">
+                    <p>Total Actual Hari Ini</p>
+                    <h2 id="prod-total-actual">0</h2>
+                    <span>Pieces</span>
+                </div>
+
+                <div class="kpi-card">
+                    <p>Target Shift Selesai</p>
+                    <h2 id="prod-total-target">0</h2>
+                    <span>Pieces</span>
+                </div>
+
+                <div class="kpi-card">
+                    <p>Productivity</p>
+                    <h2 id="prod-productivity">0%</h2>
+                    <span>Actual / Target</span>
+                </div>
+
+                <div class="kpi-card">
+                    <p>Efficiency Hari Ini</p>
+                    <h2 id="prod-efficiency">-</h2>
+                    <span>Operating Time / Planned Time</span>
+                </div>
+
+                <div class="kpi-card">
+                    <p>Total Downtime Hari Ini</p>
+                    <h2 id="prod-gap">-</h2>
+                    <span>Durasi downtime</span>
+                </div>
+            </section>
+
+            <div class="panel panel-block">
+                <h3>Target vs Actual per Shift</h3>
+                <div class="chart-container" id="production-chart-container">
+                    <canvas id="production-chart"></canvas>
+                </div>
+                <p class="helper-text">Target sementara dihitung dari 1.250 pcs/jam × 8 jam efektif = 10.000 pcs/shift. Nilai target dapat disesuaikan setelah konfirmasi PIC.</p>
+            </div>
+
+            <div class="panel panel-block">
+                <h3>Production Trend · 7 Hari Terakhir</h3>
+                <div class="chart-container" id="production-trend-container">
+                    <canvas id="production-trend-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="panel panel-block">
+                <h3>Produksi per Shift · Hari Ini</h3>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Shift</th>
+                                <th>Jadwal</th>
+                                <th>PIC</th>
+                                <th class="num">Actual (pcs)</th>
+                                <th class="num">Target (pcs)</th>
+                                <th class="num">Productivity</th>
+                                <th class="num">Efficiency</th>
+                                <th>Status Input</th>
+                            </tr>
+                        </thead>
+                        <tbody id="shift-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>Riwayat Produksi · 7 Hari Terakhir</h3>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead id="history-table-head"></thead>
+                        <tbody id="history-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+
+        <!-- PAGE: DOWNTIME -->
+        <div class="page" id="page-downtime">
+
+            <header class="topbar">
+                <div>
+                    <h1>Downtime Monitoring</h1>
+                    <p>Pencatatan waktu dan penyebab mesin berhenti - Header 01</p>
+                </div>
+            </header>
+
+            <!-- FORM INPUT -->
+            <div class="panel panel-block">
+                <h3>Catat Downtime</h3>
+
+                <form id="downtime-form" class="downtime-form">
+                    <div class="form-field">
+                        <label for="downtime-category">Kategori</label>
+                        <select id="downtime-category" required></select>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="downtime-start">Waktu Mulai</label>
+                        <input type="datetime-local" id="downtime-start" required>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="downtime-end">Waktu Selesai</label>
+                        <input type="datetime-local" id="downtime-end" required>
+                    </div>
+
+                    <div class="form-field">
+                        <label>Durasi</label>
+                        <div class="duration-preview" id="downtime-duration-preview">-</div>
+                    </div>
+
+                    <button type="submit" class="btn-primary">Simpan</button>
+                </form>
+
+                <p class="form-message" id="downtime-message"></p>
+            </div>
+
+            <!-- KARTU RINGKASAN -->
+            <section class="kpi-container kpi-compact">
+                <div class="kpi-card">
+                    <p>Total Kejadian</p>
+                    <h2 id="dt-total-count">0</h2>
+                    <span>Kali mesin berhenti</span>
+                </div>
+
+                <div class="kpi-card">
+                    <p>Total Downtime</p>
+                    <h2 id="dt-total-duration">-</h2>
+                    <span>Semua kategori</span>
+                </div>
+
+                <div class="kpi-card">
+                    <p>Rata-rata per Kejadian</p>
+                    <h2 id="dt-average-duration">-</h2>
+                    <span>Durasi</span>
+                </div>
+
+                <div class="kpi-card">
+                    <p>Penyebab Terbesar</p>
+                    <h2 id="dt-top-category">-</h2>
+                    <span id="dt-top-detail">Berdasarkan total durasi</span>
+                </div>
+            </section>
+
+            <!-- REKAP PER KATEGORI -->
+            <div class="panel panel-block">
+                <h3>Rekap Downtime per Kategori</h3>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Kategori</th>
+                                <th class="num">Kejadian</th>
+                                <th class="num">Total Durasi</th>
+                                <th>Porsi dari Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="downtime-summary-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- RIWAYAT KEJADIAN -->
+            <div class="panel">
+                <h3>Riwayat Downtime</h3>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Tanggal</th>
+                                <th>Mulai</th>
+                                <th>Selesai</th>
+                                <th class="num">Durasi</th>
+                                <th>Kategori</th>
+                                <th>Shift</th>
+                            </tr>
+                        </thead>
+                        <tbody id="downtime-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+
+        <!-- PAGE: SHIFT & PIC -->
+        <div class="page" id="page-shift">
+
+            <header class="topbar">
+                <div>
+                    <h1>Shift &amp; PIC Management</h1>
+                    <p>Satu catatan per tanggal dan shift · PIC di awal shift, Actual di akhir shift</p>
+                </div>
+            </header>
+
+            <section class="machine-status schedule-cards">
+                <div>
+                    <p>Shift 1</p>
+                    <h2>06:00 - 15:00</h2>
+                </div>
+                <div>
+                    <p>Shift 2</p>
+                    <h2>14:00 - 23:00</h2>
+                </div>
+            </section>
+
+            <div class="panel panel-block">
+                <h3>Input Catatan Shift</h3>
+                <p class="helper-text">Simpan nama PIC saat awal shift. Setelah shift selesai, buka catatan yang sama melalui tombol Edit lalu isi Actual Production. Sistem menjaga satu catatan untuk setiap tanggal dan shift.</p>
+
+                <form id="shift-pic-form" class="downtime-form">
+                    <div class="form-field">
+                        <label for="shift-pic-date">Tanggal</label>
+                        <input type="date" id="shift-pic-date" required>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="shift-pic-shift">Shift</label>
+                        <select id="shift-pic-shift" required>
+                            <option value="">Pilih Shift...</option>
+                            <option value="shift1">Shift 1 (06:00 - 15:00)</option>
+                            <option value="shift2">Shift 2 (14:00 - 23:00)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="shift-pic-name">Nama PIC / Operator</label>
+                        <input type="text" id="shift-pic-name"
+                            placeholder="Masukkan nama PIC/operator" required>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="shift-pic-actual">Actual Production (pcs)</label>
+                        <input type="number" id="shift-pic-actual" min="0" step="1" placeholder="Isi setelah shift selesai">
+                        <small>Biarkan kosong saat baru menginput PIC di awal shift.</small>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="shift-pic-notes">Catatan</label>
+                        <input type="text" id="shift-pic-notes" placeholder="Opsional">
+                    </div>
+
+                    <button type="submit" class="btn-primary" id="shift-pic-submit">Simpan</button>
+                    <button type="button" id="shift-pic-cancel" class="btn-edit" hidden>Batal Edit</button>
+                </form>
+
+                <p class="form-message" id="shift-pic-message"></p>
+            </div>
+
+            <div class="panel">
+                <h3>Riwayat Catatan Shift</h3>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Tanggal</th>
+                                <th>Shift</th>
+                                <th>Jadwal</th>
+                                <th>PIC / Operator</th>
+                                <th class="num">Actual (pcs)</th>
+                                <th>Catatan</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="shift-pic-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- PAGE: REPORTS -->
+        <div class="page" id="page-reports">
+
+            <header class="topbar">
+                <div>
+                    <h1>Production Reports</h1>
+                    <p>Laporan produksi, downtime, dan operator Header 01</p>
+                </div>
+            </header>
+
+            <div class="panel panel-block">
+                <h3>Filter Periode Laporan</h3>
+
+                <div class="downtime-form" id="report-filter-controls">
+                    <div class="form-field">
+                        <label for="report-start-date">Dari Tanggal</label>
+                        <input type="date" id="report-start-date">
+                    </div>
+                    <div class="form-field">
+                        <label for="report-end-date">Sampai Tanggal</label>
+                        <input type="date" id="report-end-date">
+                    </div>
+                    <button type="button" class="btn-primary" id="report-show-button">
+                        Tampilkan Laporan
+                    </button>
+                    <button type="button" id="report-reset-filter" class="btn-edit">
+                        Reset
+                    </button>
+                </div>
+
+                <p class="form-message" id="report-message"></p>
+
+                <div class="report-actions">
+                    <button type="button" id="report-export-csv" class="btn-edit">Export CSV</button>
+                    <button type="button" id="report-print" class="btn-primary">Cetak Laporan</button>
+                </div>
+            </div>
+
+            <div id="report-results">
+                <section class="kpi-container">
+                    <div class="kpi-card">
+                        <p>Total Actual Production</p>
+                        <h2 id="report-total-actual">0</h2>
+                        <span>Pieces</span>
+                    </div>
+                    <div class="kpi-card">
+                        <p>Total Production Target</p>
+                        <h2 id="report-total-target">0</h2>
+                        <span>Pieces</span>
+                    </div>
+                    <div class="kpi-card">
+                        <p>Productivity</p>
+                        <h2 id="report-productivity">0%</h2>
+                        <span>Actual / Target</span>
+                    </div>
+                    <div class="kpi-card">
+                        <p>Efficiency</p>
+                        <h2 id="report-efficiency">-</h2>
+                        <span>Operating Time / Planned Time</span>
+                    </div>
+                    <div class="kpi-card">
+                        <p>Total Downtime</p>
+                        <h2 id="report-downtime-duration">-</h2>
+                        <span id="report-downtime-count">0 kejadian</span>
+                    </div>
+                </section>
+
+                <div class="panel panel-block">
+                    <h3>Production Summary per Shift</h3>
+                    <div class="table-wrapper">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Shift</th>
+                                    <th>Jadwal</th>
+                                    <th class="num">Actual</th>
+                                    <th class="num">Target</th>
+                                    <th class="num">Productivity</th>
+                                    <th class="num">Efficiency</th>
+                                </tr>
+                            </thead>
+                            <tbody id="report-shift-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="panel panel-block">
+                    <h3>Daily Production Report</h3>
+                    <div class="table-wrapper">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Tanggal</th>
+                                    <th class="num">Shift 1</th>
+                                    <th class="num">Shift 2</th>
+                                    <th class="num">Total Actual</th>
+                                    <th class="num">Target</th>
+                                    <th class="num">Productivity</th>
+                                    <th class="num">Efficiency</th>
+                                    <th class="num">Downtime</th>
+                                    <th class="num">Durasi DT</th>
+                                    <th>PIC Shift 1</th>
+                                    <th>PIC Shift 2</th>
+                                </tr>
+                            </thead>
+                            <tbody id="report-daily-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>Downtime Summary by Category</h3>
+                    <div class="table-wrapper">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>No</th>
+                                    <th>Kategori</th>
+                                    <th class="num">Kejadian</th>
+                                    <th class="num">Total Durasi</th>
+                                    <th class="num">Kontribusi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="report-downtime-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- JAVASCRIPT (urutan penting: Chart.js, data, lalu script kita) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="data.js"></script>
+    <script src="script.js"></script>
+
+</body>
+</html>
