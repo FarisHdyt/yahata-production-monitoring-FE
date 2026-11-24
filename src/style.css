@@ -3843,3 +3843,434 @@ button {
     flex-direction: column;
   }
 }
+/* ==================================
+   PRODUCTION ACTION BUTTONS REFINEMENT
+================================== */
+
+.rp-filters .prod-submit-btn {
+  min-height: 36px;
+  padding: 0 18px;
+  border: 1px solid #1769aa;
+  border-radius: 7px;
+  background: #1769aa;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.12s ease;
+}
+
+.rp-filters .prod-submit-btn:hover {
+  background: #123b63;
+  border-color: #123b63;
+}
+
+.rp-filters .prod-submit-btn:active {
+  transform: translateY(1px);
+}
+
+.rp-table .prod-delete-btn {
+  padding: 5px 11px;
+  border: 1px solid #f5c2c7;
+  border-radius: 6px;
+  background: #fff5f5;
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.rp-table .prod-delete-btn:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+/* ==================================
+   MASTER PRODUCTION BUTTONS & SEARCH
+================================== */
+
+.rp-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mp-danger-btn {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #f5c2c7;
+  border-radius: 7px;
+  background: #fff5f5;
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.mp-danger-btn:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+
+.mp-search-input {
+  min-width: 260px;
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid #d7e5f2;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #203247;
+  font-size: 12px;
+  outline: none;
+}
+
+.mp-search-input:focus {
+  border-color: #1769aa;
+  box-shadow: 0 0 0 3px rgba(23, 105, 170, 0.1);
+}
+
+.rp-table .mp-row-reset-btn {
+  padding: 5px 11px;
+  border: 1px solid #d7e5f2;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1769aa;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.rp-table .mp-row-reset-btn:hover {
+  background: #1769aa;
+  border-color: #1769aa;
+  color: #ffffff;
+}
+
+/* =========================================
+   SHIFT & PIC - BUTTON STYLING
+========================================= */
+
+/* Tombol utama: Auto Isi Semua Mesin */
+.rp-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  min-height: 42px;
+  border: 1px solid #1769AA;
+  border-radius: 9px;
+  background: #1769AA;
+  color: #FFFFFF;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 5px rgba(23, 105, 170, 0.15);
+}
+
+.rp-refresh-btn:hover {
+  background: #123B63;
+  border-color: #123B63;
+  box-shadow: 0 4px 10px rgba(18, 59, 99, 0.2);
+  transform: translateY(-1px);
+}
+
+.rp-refresh-btn:active {
+  transform: translateY(0);
+}
+
+/* Tombol Simpan PIC */
+.rp-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 22px;
+  min-height: 42px;
+  border: 1px solid #1769AA;
+  border-radius: 9px;
+  background: #1769AA;
+  color: #FFFFFF;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 5px rgba(23, 105, 170, 0.15);
+}
+
+.rp-reset-btn:hover {
+  background: #123B63;
+  border-color: #123B63;
+  box-shadow: 0 4px 10px rgba(18, 59, 99, 0.2);
+  transform: translateY(-1px);
+}
+
+.rp-reset-btn:active {
+  transform: translateY(0);
+}
+
+/* Tombol Hapus di tabel */
+.rp-table td button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 13px;
+  min-height: 32px;
+  border: 1px solid #FECACA;
+  border-radius: 7px;
+  background: #FEF2F2;
+  color: #DC2626;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.rp-table td button:hover {
+  background: #DC2626;
+  border-color: #DC2626;
+  color: #FFFFFF;
+}
+
+.rp-table td button:active {
+  transform: scale(0.97);
+}
+
+/* Efek fokus keyboard */
+.rp-refresh-btn:focus-visible,
+.rp-reset-btn:focus-visible,
+.rp-table td button:focus-visible {
+  outline: 3px solid rgba(23, 105, 170, 0.25);
+  outline-offset: 3px;
+}
+
+/* Kondisi tombol disabled */
+.rp-refresh-btn:disabled,
+.rp-reset-btn:disabled,
+.rp-table td button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Responsif */
+@media (max-width: 768px) {
+  .rp-refresh-btn {
+    width: 100%;
+  }
+
+  .rp-reset-btn {
+    width: 100%;
+  }
+}
+
+/* =====================================
+   SHIFT & PIC TOAST NOTIFICATION
+===================================== */
+
+.rp-toast {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(400px, calc(100vw - 32px));
+  padding: 15px 16px;
+  border-radius: 12px;
+  background: #FFFFFF;
+  box-shadow: 0 8px 28px rgba(18, 59, 99, 0.16);
+  border: 1px solid #E1EAF2;
+  animation: rpToastIn 0.3s ease;
+}
+
+.rp-toast.success {
+  border-left: 5px solid #16A34A;
+}
+
+.rp-toast.error {
+  border-left: 5px solid #DC2626;
+}
+
+.rp-toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  font-weight: 800;
+}
+
+.rp-toast.success .rp-toast-icon {
+  color: #15803D;
+  background: #DCFCE7;
+}
+
+.rp-toast.error .rp-toast-icon {
+  color: #B91C1C;
+  background: #FEE2E2;
+}
+
+.rp-toast-message {
+  flex: 1;
+  color: #203247;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.rp-toast-close {
+  border: none;
+  background: transparent;
+  color: #718096;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.rp-toast-close:hover {
+  color: #203247;
+}
+
+@keyframes rpToastIn {
+  from {
+    opacity: 0;
+    transform: translateX(25px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 600px) {
+  .rp-toast {
+    top: 12px;
+    right: 12px;
+    width: calc(100vw - 24px);
+  }
+}
+/* PRODUCTION TOAST NOTIFICATION */
+.prod-toast {
+  position: fixed;
+  top: 90px;
+  right: 24px;
+  z-index: 9999;
+  width: min(390px, calc(100vw - 32px));
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-left: 5px solid #64748b;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #1e293b;
+  box-shadow: 0 12px 35px rgba(15, 23, 42, 0.16);
+  animation: prodToastIn 0.25s ease-out;
+}
+
+.prod-toast.success {
+  border-left-color: #16a34a;
+}
+
+.prod-toast.error {
+  border-left-color: #dc2626;
+}
+
+.prod-toast.warning {
+  border-left-color: #d97706;
+}
+
+.prod-toast-icon {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.prod-toast.success .prod-toast-icon {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.prod-toast.error .prod-toast-icon {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.prod-toast.warning .prod-toast-icon {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.prod-toast-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.prod-toast-content strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.prod-toast-content span {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.prod-toast-close {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 23px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.prod-toast-close:hover {
+  color: #1e293b;
+}
+
+@keyframes prodToastIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 600px) {
+  .prod-toast {
+    top: 16px;
+    right: 16px;
+  }
+}
+/* CONSISTENT PAGE SPACING */
+.page-content > :not(.dashboard) {
+  padding-top: 22px;
+}

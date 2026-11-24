@@ -1,622 +1,744 @@
 
-import { useMemo, useState } from "react";
-import { MACHINES, SHIFTS } from "../config.js";
+import { useEffect, useMemo, useState } from "react";
+import { MACHINES, SHIFTS } from "../config";
 
-const STORAGE_KEY = "yahataProductionRecords";
-const MASTER_KEY = "yahataMasterProduction";
+const PRODUCTION_STORAGE_KEY = "yahataProductionRecords";
+const MASTER_STORAGE_KEY = "yahataMasterProduction";
+const SHIFT_PIC_STORAGE_KEY = "yahataShiftPicRecords";
+
+const DEFAULT_SHIFT1_PIC = {
+  "NF-19B": "Iis Iskandar",
+  "BP-450": "Iis Iskandar",
+  "YDP-136": "Iis Iskandar",
+  "PF-860": "Iis Iskandar",
+  "CBP-105": "Achmad Syaiful",
+  "CBP-136": "Achmad Syaiful",
+  "HBF-823": "Achmad Syaiful",
+  "YH-1552": "Achmad Syaiful",
+  "CBP-106": "Nanda Ferry C",
+  "NP-12": "Nanda Ferry C",
+  "HBF-823 NEW": "Nanda Ferry C",
+  "HM-676": "Nanda Ferry C",
+  "ZH-30200": "Jason",
+  "HM-552": "Jason",
+};
+
+const DEFAULT_SHIFT2_PIC = {
+  "NF-19B": "Fiki Firmansyah",
+  "BP-450": "Yossi Tera P",
+  "YDP-136": "Fiki Firmansyah",
+  "PF-860": "Fiki Firmansyah",
+  "CBP-105": "Yossi Tera P",
+  "CBP-136": "Yossi Tera P",
+  "HBF-823": "Wakyudi",
+  "YH-1552": "Jason",
+  "CBP-106": "Fiki Firmansyah",
+  "NP-12": "Wakyudi",
+  "HBF-823 NEW": "Wakyudi",
+  "HM-676": "Yossi Tera P",
+  "ZH-30200": "Jason",
+  "HM-552": "Jason",
+};
 
 const getToday = () => {
-    const now = new Date();
-    const offset = now.getTimezoneOffset() * 60000;
-    return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
 };
 
-const createEmptyForm = () => ({
-    date: getToday(),
-    shift: "1",
-    machine: MACHINES[0] || "",
-    partNumber: "",
-    startTime: "06:00",
-    endTime: "07:00",
-    output: "",
-    pic: "",
-    notes: "",
-});
+function safeReadArray(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
-const loadRecords = () => {
-    try {
-        return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    } catch {
-        return [];
-    }
-};
+function toMinutes(hhmm) {
+  if (!hhmm || !String(hhmm).includes(":")) return null;
+  const [h, m] = String(hhmm).split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
 
-const loadMasters = () => {
-    try {
-        return JSON.parse(localStorage.getItem(MASTER_KEY) || "[]");
-    } catch {
-        return [];
-    }
-};
+function formatNumber(val) {
+  return Number(val || 0).toLocaleString("id-ID");
+}
 
-const formatNumber = (value) =>
-    Number(value || 0).toLocaleString("id-ID");
+function formatDate(dateStr) {
+  if (!dateStr) return "-";
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
 
-const formatDate = (date) =>
-    date
-        ? new Date(`${date}T00:00:00`).toLocaleDateString("id-ID", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-          })
-        : "-";
+function normalizeShiftLabel(shiftVal) {
+  if (
+    String(shiftVal) === "1" ||
+    shiftVal === "Shift 1" ||
+    shiftVal === "shift1"
+  ) {
+    return "Shift 1";
+  }
 
-const getShift = (shiftId) =>
-    SHIFTS.find((item) => String(item.id) === String(shiftId));
+  if (
+    String(shiftVal) === "2" ||
+    shiftVal === "Shift 2" ||
+    shiftVal === "shift2"
+  ) {
+    return "Shift 2";
+  }
+
+  return String(shiftVal || "-");
+}
 
 export default function Production() {
-    const [records, setRecords] = useState(loadRecords);
-    const [masters] = useState(loadMasters);
-    const [form, setForm] = useState(createEmptyForm);
-    const [editingId, setEditingId] = useState(null);
+  const [records, setRecords] = useState(() =>
+    safeReadArray(PRODUCTION_STORAGE_KEY)
+  );
 
-    const [filterDate, setFilterDate] = useState(getToday());
-    const [filterShift, setFilterShift] = useState("all");
-    const [filterMachine, setFilterMachine] = useState("all");
+  const [masters, setMasters] = useState(() =>
+    safeReadArray(MASTER_STORAGE_KEY)
+  );
 
-    const configuredMachines = useMemo(
-        () => masters.filter((item) => item.partNumber?.trim()),
-        [masters]
-    );
+  const [shiftPicRecords, setShiftPicRecords] = useState(() =>
+    safeReadArray(SHIFT_PIC_STORAGE_KEY)
+  );
 
-    const totalOutput = useMemo(
-        () => records.reduce(
-            (total, item) => total + Number(item.output || 0),
-            0
-        ),
-        [records]
-    );
+  const [date, setDate] = useState(getToday);
+  const [shift, setShift] = useState("Shift 1");
+  const [machine, setMachine] = useState(MACHINES[0] || "NF-19B");
+  const [partNumber, setPartNumber] = useState("");
+  const [rpm, setRpm] = useState(0);
+  const [startTime, setStartTime] = useState("08:00");
+  const [endTime, setEndTime] = useState("09:00");
 
-    const todayRecords = useMemo(
-        () => records.filter((item) => item.date === getToday()),
-        [records]
-    );
+  const [useCounterMode, setUseCounterMode] = useState(false);
+  const [counterStart, setCounterStart] = useState("");
+  const [counterEnd, setCounterEnd] = useState("");
+  const [manualOutput, setManualOutput] = useState("");
 
-    const todayOutput = todayRecords.reduce(
-        (total, item) => total + Number(item.output || 0),
-        0
-    );
+  const [pic, setPic] = useState("");
+  const [notes, setNotes] = useState("");
+  const [filterMachine, setFilterMachine] = useState("all");
 
-    const filteredRecords = useMemo(() => {
-        return records
-            .filter((item) => {
-                const dateMatch =
-                    !filterDate || item.date === filterDate;
+  const [feedback, setFeedback] = useState(null);
 
-                const shiftMatch =
-                    filterShift === "all" ||
-                    String(item.shift) === filterShift;
+  // Toast otomatis hilang setelah 3,5 detik
+  useEffect(() => {
+    if (!feedback) return;
 
-                const machineMatch =
-                    filterMachine === "all" ||
-                    item.machine === filterMachine;
+    const timer = setTimeout(() => {
+      setFeedback(null);
+    }, 3500);
 
-                return dateMatch && shiftMatch && machineMatch;
-            })
-            .sort((a, b) => {
-                const dateCompare = b.date.localeCompare(a.date);
-                if (dateCompare !== 0) return dateCompare;
-                return b.startTime.localeCompare(a.startTime);
-            });
-    }, [records, filterDate, filterShift, filterMachine]);
+    return () => clearTimeout(timer);
+  }, [feedback]);
 
-    const updateForm = (field, value) => {
-        setForm((previous) => ({
-            ...previous,
-            [field]: value,
-        }));
+  const showNotification = (message, type = "success") => {
+    setFeedback({
+      type,
+      message,
+      id: Date.now(),
+    });
+  };
+
+  const reloadAll = () => {
+    setRecords(safeReadArray(PRODUCTION_STORAGE_KEY));
+    setMasters(safeReadArray(MASTER_STORAGE_KEY));
+    setShiftPicRecords(safeReadArray(SHIFT_PIC_STORAGE_KEY));
+  };
+
+  useEffect(() => {
+    window.addEventListener("storage", reloadAll);
+    window.addEventListener("yahata-storage-updated", reloadAll);
+
+    return () => {
+      window.removeEventListener("storage", reloadAll);
+      window.removeEventListener("yahata-storage-updated", reloadAll);
     };
+  }, []);
 
-    const persistRecords = (updated) => {
-        setRecords(updated);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    };
+  const currentMaster = useMemo(
+    () => masters.find((m) => m.machine === machine) || null,
+    [masters, machine]
+  );
 
-    const handleMachineChange = (machine) => {
-        const master = masters.find(
-            (item) => item.machine === machine
+  useEffect(() => {
+    if (currentMaster) {
+      setPartNumber(currentMaster.partNumber || "");
+      setRpm(Number(currentMaster.rpm || 0));
+    } else {
+      setPartNumber("");
+      setRpm(0);
+    }
+  }, [currentMaster]);
+
+  useEffect(() => {
+    const shiftMatch = shiftPicRecords.find(
+      (sp) =>
+        sp.date === date &&
+        sp.shift === shift &&
+        sp.machine === machine
+    );
+
+    if (shiftMatch?.pic) {
+      setPic(shiftMatch.pic);
+      return;
+    }
+
+    if (shift === "Shift 1") {
+      setPic(currentMaster?.picShift1 || DEFAULT_SHIFT1_PIC[machine] || "");
+    } else {
+      setPic(currentMaster?.picShift2 || DEFAULT_SHIFT2_PIC[machine] || "");
+    }
+  }, [date, shift, machine, shiftPicRecords, currentMaster]);
+
+  const computedOutput = useMemo(() => {
+    if (useCounterMode) {
+      const startVal = Number(counterStart);
+      const endVal = Number(counterEnd);
+
+      if (
+        counterStart === "" ||
+        counterEnd === "" ||
+        !Number.isFinite(startVal) ||
+        !Number.isFinite(endVal)
+      ) {
+        return 0;
+      }
+
+      return Math.max(0, endVal - startVal);
+    }
+
+    const num = Number(manualOutput);
+    return Number.isFinite(num) && num > 0 ? num : 0;
+  }, [useCounterMode, counterStart, counterEnd, manualOutput]);
+
+  const persistRecords = (nextList) => {
+    try {
+      localStorage.setItem(
+        PRODUCTION_STORAGE_KEY,
+        JSON.stringify(nextList)
+      );
+
+      setRecords(nextList);
+      window.dispatchEvent(new Event("yahata-storage-updated"));
+      return true;
+    } catch (error) {
+      console.error("Gagal menyimpan data produksi:", error);
+      showNotification("Data produksi gagal disimpan ke LocalStorage.", "error");
+      return false;
+    }
+  };
+
+  const handlePartDropdownChange = (selectedPartNo) => {
+    setPartNumber(selectedPartNo);
+
+    const matchedOption = currentMaster?.partOptions?.find(
+      (opt) => opt.partNo === selectedPartNo
+    );
+
+    if (matchedOption && matchedOption.rpm !== undefined) {
+      setRpm(Number(matchedOption.rpm || 0));
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setFeedback(null);
+
+    const startMin = toMinutes(startTime);
+    const endMin = toMinutes(endTime);
+
+    if (!date || !machine || !partNumber.trim()) {
+      showNotification(
+        "Tanggal, Mesin, dan Part Number wajib diisi.",
+        "error"
+      );
+      return;
+    }
+
+    if (
+      startMin === null ||
+      endMin === null ||
+      endMin <= startMin
+    ) {
+      showNotification(
+        "Jam selesai harus lebih besar dari jam mulai.",
+        "error"
+      );
+      return;
+    }
+
+    if (
+      shift === "Shift 1" &&
+      (startMin < 360 || endMin > 900)
+    ) {
+      showNotification(
+        "Untuk Shift 1, rentang waktu harus berada di antara 06:00 hingga 15:00.",
+        "error"
+      );
+      return;
+    }
+
+    if (
+      shift === "Shift 2" &&
+      (startMin < 900 || endMin > 1380)
+    ) {
+      showNotification(
+        "Untuk Shift 2, rentang waktu harus berada di antara 15:00 hingga 23:00.",
+        "error"
+      );
+      return;
+    }
+
+    // Validasi bentrok jadwal pada mesin dan tanggal yang sama
+    const hasOverlap = records.some((item) => {
+      if (item.date !== date || item.machine !== machine) {
+        return false;
+      }
+
+      const itemStart = toMinutes(item.startTime);
+      const itemEnd = toMinutes(item.endTime);
+
+      if (itemStart === null || itemEnd === null) {
+        return false;
+      }
+
+      return startMin < itemEnd && endMin > itemStart;
+    });
+
+    if (hasOverlap) {
+      showNotification(
+        `Jadwal produksi ${machine} bertabrakan dengan catatan yang sudah ada pada ${date}. Periksa kembali jam mulai dan selesai.`,
+        "error"
+      );
+      return;
+    }
+
+    if (useCounterMode) {
+      if (counterStart === "" || counterEnd === "") {
+        showNotification(
+          "Counter Awal dan Counter Akhir wajib diisi pada mode counter.",
+          "error"
         );
+        return;
+      }
 
-        setForm((previous) => ({
-            ...previous,
-            machine,
-            partNumber: master?.partNumber || "",
-        }));
+      if (Number(counterEnd) < Number(counterStart)) {
+        showNotification(
+          "Counter Akhir tidak boleh lebih kecil dari Counter Awal.",
+          "error"
+        );
+        return;
+      }
+
+      if (Number(counterEnd) === Number(counterStart)) {
+        showNotification(
+          "Counter Akhir sama dengan Counter Awal. Pastikan nilai counter sudah benar.",
+          "warning"
+        );
+        return;
+      }
+    } else if (computedOutput <= 0) {
+      showNotification(
+        "Output produksi harus lebih besar dari 0 pcs.",
+        "error"
+      );
+      return;
+    }
+
+    const newRecord = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      date,
+      shift,
+      machine,
+      partNumber: partNumber.trim(),
+      rpm: Number(rpm) || 0,
+      startTime,
+      endTime,
+      counterStart: useCounterMode ? Number(counterStart) : null,
+      counterEnd: useCounterMode ? Number(counterEnd) : null,
+      output: computedOutput,
+      pic: pic.trim() || "-",
+      notes: notes.trim(),
+      createdAt: new Date().toISOString(),
     };
 
-    const resetForm = () => {
-        setForm(createEmptyForm());
-        setEditingId(null);
-    };
+    const nextList = [newRecord, ...records];
 
-    const handleSubmit = (event) => {
-        event.preventDefault();
+    const saved = persistRecords(nextList);
+    if (!saved) return;
 
-        if (!form.machine || !form.partNumber.trim()) {
-            alert(
-                "Mesin belum memiliki Part Number. Periksa Master Production terlebih dahulu."
-            );
-            return;
-        }
-
-        const output = Number(form.output);
-
-        if (!Number.isInteger(output) || output <= 0) {
-            alert("Output harus berupa bilangan bulat lebih dari 0.");
-            return;
-        }
-
-        const shift = getShift(form.shift);
-
-        if (!shift) {
-            alert("Shift tidak valid.");
-            return;
-        }
-
-        if (
-            form.startTime < shift.start ||
-            form.endTime > shift.end ||
-            form.startTime >= form.endTime
-        ) {
-            alert(
-                `Waktu produksi harus berada dalam jadwal ${shift.name}: ${shift.start} - ${shift.end}.`
-            );
-            return;
-        }
-
-        const hasOverlap = records.some((item) => {
-            if (item.id === editingId) return false;
-
-            if (
-                item.date !== form.date ||
-                item.machine !== form.machine
-            ) {
-                return false;
-            }
-
-            return (
-                form.startTime < item.endTime &&
-                form.endTime > item.startTime
-            );
-        });
-
-        if (hasOverlap) {
-            alert(
-                "Periode produksi bertabrakan dengan catatan lain pada mesin dan tanggal yang sama."
-            );
-            return;
-        }
-
-        const record = {
-            id: editingId || String(Date.now()),
-            date: form.date,
-            shift: Number(form.shift),
-            machine: form.machine,
-            partNumber: form.partNumber.trim(),
-            startTime: form.startTime,
-            endTime: form.endTime,
-            output,
-            pic: form.pic.trim(),
-            notes: form.notes.trim(),
-            updatedAt: new Date().toISOString(),
-        };
-
-        if (!record.pic) {
-            alert("Nama PIC wajib diisi.");
-            return;
-        }
-
-        const updated = editingId
-            ? records.map((item) =>
-                  item.id === editingId ? record : item
-              )
-            : [...records, record];
-
-        persistRecords(updated);
-        resetForm();
-
-        alert("Data produksi berhasil disimpan.");
-    };
-
-    const handleEdit = (record) => {
-        setEditingId(record.id);
-
-        setForm({
-            date: record.date,
-            shift: String(record.shift),
-            machine: record.machine,
-            partNumber: record.partNumber,
-            startTime: record.startTime,
-            endTime: record.endTime,
-            output: String(record.output),
-            pic: record.pic,
-            notes: record.notes || "",
-        });
-
-        window.scrollTo({
-            top: 0,
-            behavior: "smooth",
-        });
-    };
-
-    const handleDelete = (id) => {
-        if (!window.confirm("Yakin ingin menghapus catatan produksi ini?")) {
-            return;
-        }
-
-        persistRecords(records.filter((item) => item.id !== id));
-
-        if (editingId === id) {
-            resetForm();
-        }
-    };
-
-    return (
-        <div className="production-page">
-            <div className="production-heading">
-                <div>
-                    <span className="page-eyebrow">
-                        FORMING AREA
-                    </span>
-
-                    <h2>Production Input</h2>
-
-                    <p>
-                        Catat hasil produksi aktual setiap mesin
-                        berdasarkan periode produksi.
-                    </p>
-                </div>
-
-                <div className="production-demo-badge">
-                    <span></span>
-                    Local Storage
-                </div>
-            </div>
-
-            <div className="production-summary">
-                <div className="production-stat">
-                    <span>Total Records</span>
-                    <strong>{records.length}</strong>
-                    <small>Catatan produksi</small>
-                </div>
-
-                <div className="production-stat">
-                    <span>Today's Records</span>
-                    <strong>{todayRecords.length}</strong>
-                    <small>Catatan hari ini</small>
-                </div>
-
-                <div className="production-stat">
-                    <span>Today's Output</span>
-                    <strong>{formatNumber(todayOutput)}</strong>
-                    <small>Total output hari ini</small>
-                </div>
-
-                <div className="production-stat">
-                    <span>All-Time Output</span>
-                    <strong>{formatNumber(totalOutput)}</strong>
-                    <small>Total output tercatat</small>
-                </div>
-            </div>
-
-            <section className="production-panel">
-                <div className="production-panel-heading">
-                    <div>
-                        <h3>
-                            {editingId
-                                ? "Edit Production Record"
-                                : "Input Hasil Produksi"}
-                        </h3>
-
-                        <p>
-                            Data produksi dicatat berdasarkan periode aktual.
-                        </p>
-                    </div>
-
-                    {editingId && (
-                        <span className="editing-label">
-                            Mode Edit
-                        </span>
-                    )}
-                </div>
-
-                <form onSubmit={handleSubmit}>
-                    <div className="production-form-grid">
-                        <label className="production-field">
-                            <span>Tanggal *</span>
-                            <input
-                                type="date"
-                                value={form.date}
-                                onChange={(e) =>
-                                    updateForm("date", e.target.value)
-                                }
-                                required
-                            />
-                        </label>
-
-                        <label className="production-field">
-                            <span>Shift *</span>
-                            <select
-                                value={form.shift}
-                                onChange={(e) =>
-                                    updateForm("shift", e.target.value)
-                                }
-                            >
-                                {SHIFTS.map((shift) => (
-                                    <option
-                                        key={shift.id}
-                                        value={String(shift.id)}
-                                    >
-                                        {shift.name} ({shift.schedule})
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-
-                        <label className="production-field">
-                            <span>Mesin *</span>
-                            <select
-                                value={form.machine}
-                                onChange={(e) =>
-                                    handleMachineChange(e.target.value)
-                                }
-                                required
-                            >
-                                {MACHINES.map((machine) => (
-                                    <option key={machine} value={machine}>
-                                        {machine}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-
-                        <label className="production-field">
-                            <span>Part Number *</span>
-                            <input
-                                value={form.partNumber}
-                                onChange={(e) =>
-                                    updateForm("partNumber", e.target.value)
-                                }
-                                placeholder="Belum dikonfigurasi"
-                                required
-                            />
-                        </label>
-
-                        <label className="production-field">
-                            <span>Jam Mulai *</span>
-                            <input
-                                type="time"
-                                value={form.startTime}
-                                onChange={(e) =>
-                                    updateForm("startTime", e.target.value)
-                                }
-                                required
-                            />
-                        </label>
-
-                        <label className="production-field">
-                            <span>Jam Selesai *</span>
-                            <input
-                                type="time"
-                                value={form.endTime}
-                                onChange={(e) =>
-                                    updateForm("endTime", e.target.value)
-                                }
-                                required
-                            />
-                        </label>
-
-                        <label className="production-field">
-                            <span>Output Aktual (pcs) *</span>
-                            <input
-                                type="number"
-                                min="1"
-                                step="1"
-                                value={form.output}
-                                onChange={(e) =>
-                                    updateForm("output", e.target.value)
-                                }
-                                placeholder="Masukkan jumlah produksi"
-                                required
-                            />
-                        </label>
-
-                        <label className="production-field">
-                            <span>Nama PIC *</span>
-                            <input
-                                value={form.pic}
-                                onChange={(e) =>
-                                    updateForm("pic", e.target.value)
-                                }
-                                placeholder="Nama penanggung jawab"
-                                required
-                            />
-                        </label>
-
-                        <label className="production-field">
-                            <span>Catatan</span>
-                            <input
-                                value={form.notes}
-                                onChange={(e) =>
-                                    updateForm("notes", e.target.value)
-                                }
-                                placeholder="Catatan tambahan (opsional)"
-                            />
-                        </label>
-                    </div>
-
-                    <div className="production-form-footer">
-                        <span>
-                            PN otomatis mengikuti Master Production saat
-                            mesin dipilih. Kamu tetap bisa menyesuaikan
-                            snapshot PN untuk pencatatan periode tertentu.
-                        </span>
-
-                        <div>
-                            {editingId && (
-                                <button
-                                    type="button"
-                                    className="production-button secondary"
-                                    onClick={resetForm}
-                                >
-                                    Batal Edit
-                                </button>
-                            )}
-
-                            <button
-                                type="submit"
-                                className="production-button primary"
-                            >
-                                {editingId
-                                    ? "Simpan Perubahan"
-                                    : "Simpan Produksi"}
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            </section>
-
-            <section className="production-panel">
-                <div className="production-panel-heading">
-                    <div>
-                        <h3>Production History</h3>
-                        <p>
-                            Riwayat hasil produksi berdasarkan filter.
-                        </p>
-                    </div>
-
-                    <span className="record-count">
-                        {filteredRecords.length} RECORDS
-                    </span>
-                </div>
-
-                <div className="production-form-grid production-filter-grid">
-                    <label className="production-field">
-                        <span>Filter Tanggal</span>
-                        <input
-                            type="date"
-                            value={filterDate}
-                            onChange={(e) =>
-                                setFilterDate(e.target.value)
-                            }
-                        />
-                    </label>
-
-                    <label className="production-field">
-                        <span>Filter Shift</span>
-                        <select
-                            value={filterShift}
-                            onChange={(e) =>
-                                setFilterShift(e.target.value)
-                            }
-                        >
-                            <option value="all">Semua Shift</option>
-                            {SHIFTS.map((shift) => (
-                                <option
-                                    key={shift.id}
-                                    value={String(shift.id)}
-                                >
-                                    {shift.name}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-
-                    <label className="production-field">
-                        <span>Filter Mesin</span>
-                        <select
-                            value={filterMachine}
-                            onChange={(e) =>
-                                setFilterMachine(e.target.value)
-                            }
-                        >
-                            <option value="all">Semua Mesin</option>
-                            {MACHINES.map((machine) => (
-                                <option key={machine} value={machine}>
-                                    {machine}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                </div>
-
-                <div className="production-table-wrapper">
-                    <table className="production-table">
-                        <thead>
-                            <tr>
-                                <th>Tanggal</th>
-                                <th>Shift</th>
-                                <th>Mesin</th>
-                                <th>Part Number</th>
-                                <th>Periode</th>
-                                <th>Output</th>
-                                <th>PIC</th>
-                                <th>Aksi</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            {filteredRecords.length === 0 ? (
-                                <tr>
-                                    <td colSpan="8" className="empty-state">
-                                        Belum ada data produksi pada filter ini.
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredRecords.map((item) => (
-                                    <tr key={item.id}>
-                                        <td>{formatDate(item.date)}</td>
-                                        <td>Shift {item.shift}</td>
-                                        <td><strong>{item.machine}</strong></td>
-                                        <td>{item.partNumber}</td>
-                                        <td>
-                                            {item.startTime} - {item.endTime}
-                                        </td>
-                                        <td>
-                                            <strong>
-                                                {formatNumber(item.output)} pcs
-                                            </strong>
-                                        </td>
-                                        <td>{item.pic}</td>
-                                        <td>
-                                            <div className="table-actions">
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        handleEdit(item)
-                                                    }
-                                                >
-                                                    Edit
-                                                </button>
-
-                                                <button
-                                                    type="button"
-                                                    className="delete-action"
-                                                    onClick={() =>
-                                                        handleDelete(item.id)
-                                                    }
-                                                >
-                                                    Hapus
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        </div>
+    setManualOutput("");
+    setCounterStart(
+      useCounterMode && counterEnd !== "" ? String(counterEnd) : ""
     );
+    setCounterEnd("");
+    setNotes("");
+
+    showNotification(
+      `Catatan produksi ${machine} (${formatNumber(computedOutput)} pcs) berhasil disimpan.`,
+      "success"
+    );
+  };
+
+  const handleDelete = (id) => {
+    const nextList = records.filter((item) => item.id !== id);
+
+    const saved = persistRecords(nextList);
+    if (!saved) return;
+
+    showNotification("Catatan produksi berhasil dihapus.", "success");
+  };
+
+  const visibleRecords = useMemo(() => {
+    return records
+      .filter((item) => {
+        const dateOk = !date || item.date === date;
+        const machineOk =
+          filterMachine === "all" || item.machine === filterMachine;
+
+        return dateOk && machineOk;
+      })
+      .sort((a, b) => {
+        if (a.date !== b.date) {
+          return b.date.localeCompare(a.date);
+        }
+
+        return String(b.startTime || "").localeCompare(
+          String(a.startTime || "")
+        );
+      });
+  }, [records, date, filterMachine]);
+
+  const totalDisplayedOutput = useMemo(
+    () =>
+      visibleRecords.reduce(
+        (sum, item) => sum + Number(item.output || 0),
+        0
+      ),
+    [visibleRecords]
+  );
+
+  return (
+    <div className="rp-page">
+      {/* Toast Notification */}
+      {feedback && (
+        <div
+          key={feedback.id}
+          className={`prod-toast ${feedback.type}`}
+          role="alert"
+        >
+          <div className="prod-toast-icon">
+            {feedback.type === "success"
+              ? "✓"
+              : feedback.type === "error"
+              ? "!"
+              : "⚠"}
+          </div>
+
+          <div className="prod-toast-content">
+            <strong>
+              {feedback.type === "success"
+                ? "Berhasil"
+                : feedback.type === "error"
+                ? "Gagal"
+                : "Peringatan"}
+            </strong>
+
+            <span>{feedback.message}</span>
+          </div>
+
+          <button
+            type="button"
+            className="prod-toast-close"
+            onClick={() => setFeedback(null)}
+            aria-label="Tutup notifikasi"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      <div className="rp-heading">
+        <div>
+          <div className="rp-eyebrow">DAILY PRODUCTION ENTRY</div>
+          <h1>Production Input</h1>
+          <p>
+            Pencatatan hasil produksi per mesin dengan auto-fill Part
+            Number, RPM, dan PIC.
+          </p>
+        </div>
+      </div>
+
+      <section className="rp-filter-panel">
+        <form onSubmit={handleSubmit} className="rp-filters">
+          <label>
+            Tanggal
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </label>
+
+          <label>
+            Shift
+            <select
+              value={shift}
+              onChange={(e) => setShift(e.target.value)}
+            >
+              {SHIFTS.map((s) => (
+                <option key={s.id} value={s.name}>
+                  {s.name} ({s.start}–{s.end})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Mesin
+            <select
+              value={machine}
+              onChange={(e) => setMachine(e.target.value)}
+            >
+              {MACHINES.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {currentMaster?.partOptions?.length > 0 && (
+            <label>
+              Preset Part ({machine})
+              <select
+                value={partNumber}
+                onChange={(e) =>
+                  handlePartDropdownChange(e.target.value)
+                }
+              >
+                {currentMaster.partOptions.map((opt, idx) => (
+                  <option
+                    key={`${opt.partNo}-${idx}`}
+                    value={opt.partNo}
+                  >
+                    {opt.partNo} ({opt.rpm} RPM)
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          <label>
+            Part Number
+            <input
+              type="text"
+              value={partNumber}
+              onChange={(e) => setPartNumber(e.target.value)}
+              placeholder="Part Number"
+            />
+          </label>
+
+          <label>
+            RPM Standar
+            <input
+              type="number"
+              min="0"
+              value={rpm}
+              onChange={(e) => setRpm(e.target.value)}
+            />
+          </label>
+
+          <label>
+            Jam Mulai
+            <input
+              type="time"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+            />
+          </label>
+
+          <label>
+            Jam Selesai
+            <input
+              type="time"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+            />
+          </label>
+
+          <label>
+            Mode Input
+            <select
+              value={useCounterMode ? "counter" : "manual"}
+              onChange={(e) =>
+                setUseCounterMode(e.target.value === "counter")
+              }
+            >
+              <option value="manual">
+                Input Output Langsung (pcs)
+              </option>
+              <option value="counter">Counter Kumulatif</option>
+            </select>
+          </label>
+
+          {useCounterMode ? (
+            <>
+              <label>
+                Counter Awal
+                <input
+                  type="number"
+                  min="0"
+                  value={counterStart}
+                  onChange={(e) => setCounterStart(e.target.value)}
+                  placeholder="0"
+                />
+              </label>
+
+              <label>
+                Counter Akhir
+                <input
+                  type="number"
+                  min="0"
+                  value={counterEnd}
+                  onChange={(e) => setCounterEnd(e.target.value)}
+                  placeholder="0"
+                />
+              </label>
+            </>
+          ) : (
+            <label>
+              Output Aktual (pcs)
+              <input
+                type="number"
+                min="0"
+                value={manualOutput}
+                onChange={(e) => setManualOutput(e.target.value)}
+                placeholder="Contoh: 120"
+              />
+            </label>
+          )}
+
+          <label>
+            PIC / Operator
+            <input
+              type="text"
+              value={pic}
+              onChange={(e) => setPic(e.target.value)}
+              placeholder="Nama PIC"
+            />
+          </label>
+
+          <label>
+            Catatan
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Opsional"
+            />
+          </label>
+
+          <button type="submit" className="prod-submit-btn">
+            Simpan ({formatNumber(computedOutput)} pcs)
+          </button>
+        </form>
+      </section>
+
+      <section className="rp-panel">
+        <div className="rp-panel-heading">
+          <div>
+            <h2>Production History ({formatDate(date)})</h2>
+            <p>
+              Total tampil:{" "}
+              <strong>
+                {formatNumber(totalDisplayedOutput)} pcs
+              </strong>{" "}
+              ({visibleRecords.length} catatan)
+            </p>
+          </div>
+
+          <select
+            value={filterMachine}
+            onChange={(e) => setFilterMachine(e.target.value)}
+          >
+            <option value="all">
+              Semua Mesin ({MACHINES.length})
+            </option>
+
+            {MACHINES.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="rp-table-wrap">
+          <table className="rp-table">
+            <thead>
+              <tr>
+                <th>TANGGAL</th>
+                <th>SHIFT</th>
+                <th>MESIN</th>
+                <th>PART NUMBER</th>
+                <th>WAKTU</th>
+                <th>OUTPUT</th>
+                <th>PIC</th>
+                <th>CATATAN</th>
+                <th>AKSI</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {visibleRecords.length === 0 ? (
+                <tr>
+                  <td colSpan="9" className="rp-empty">
+                    Belum ada catatan produksi untuk filter ini.
+                  </td>
+                </tr>
+              ) : (
+                visibleRecords.map((item) => (
+                  <tr key={item.id}>
+                    <td>{formatDate(item.date)}</td>
+                    <td>{normalizeShiftLabel(item.shift)}</td>
+                    <td>
+                      <strong>{item.machine}</strong>
+                    </td>
+                    <td>{item.partNumber || "-"}</td>
+                    <td>
+                      {item.startTime} – {item.endTime}
+                    </td>
+                    <td>
+                      <strong>
+                        {formatNumber(item.output)} pcs
+                      </strong>
+                    </td>
+                    <td>{item.pic || "-"}</td>
+                    <td>{item.notes || "—"}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="prod-delete-btn"
+                        onClick={() => handleDelete(item.id)}
+                      >
+                        Hapus
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
 }

@@ -1,8 +1,9 @@
-
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MACHINES, SHIFTS } from "../config";
 
 const STORAGE_KEY = "yahataDowntimeEvents";
+const SHIFT_PIC_KEY = "yahataShiftPicRecords";
+const PRODUCTION_KEY = "yahataProductionRecords";
 
 const CATEGORIES = [
   "Dandori (lepas dan pasang tools)",
@@ -28,13 +29,17 @@ const emptyForm = () => ({
   notes: "",
 });
 
-function loadEvents() {
+function safeReadArray(key) {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const saved = JSON.parse(localStorage.getItem(key) || "[]");
     return Array.isArray(saved) ? saved : [];
   } catch {
     return [];
   }
+}
+
+function loadEvents() {
+  return safeReadArray(STORAGE_KEY);
 }
 
 function getMinutes(start, end) {
@@ -68,12 +73,15 @@ function formatDate(value) {
   });
 }
 
+// Handover Shift 1 ke Shift 2 (14:00 - 14:15) masuk ke Shift 1
 function getShift(dateValue) {
+  if (!dateValue) return "Di luar shift";
   const date = new Date(dateValue);
+  if (!Number.isFinite(date.getTime())) return "Di luar shift";
   const minutes = date.getHours() * 60 + date.getMinutes();
 
-  if (minutes >= 360 && minutes < 900) return "Shift 1";
-  if (minutes >= 900 && minutes < 1380) return "Shift 2";
+  if (minutes >= 360 && minutes <= 855) return "Shift 1";
+  if (minutes > 855 && minutes < 1380) return "Shift 2";
 
   return "Di luar shift";
 }
@@ -83,38 +91,99 @@ function toLocalInputValue(date) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
+function toLocalDateString(dateValue) {
+  const d = new Date(dateValue);
+  if (!Number.isFinite(d.getTime())) return "";
+  const offset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function findAssignedPicForDowntime(shiftPicList, startAtText, machine) {
+  if (!startAtText || !machine) return "";
+  const d = new Date(startAtText);
+  if (!Number.isFinite(d.getTime())) return "";
+  const localDate = toLocalDateString(d);
+  const shiftName = getShift(startAtText);
+  if (shiftName !== "Shift 1" && shiftName !== "Shift 2") return "";
+
+  const found = shiftPicList.find(
+    (item) =>
+      item.date === localDate &&
+      item.machine === machine &&
+      item.shift === shiftName
+  );
+  return found?.pic || "";
+}
+
 export default function Downtime() {
   const [events, setEvents] = useState(loadEvents);
+  const [shiftPicList, setShiftPicList] = useState(() => safeReadArray(SHIFT_PIC_KEY));
+  const [productionList, setProductionList] = useState(() => safeReadArray(PRODUCTION_KEY));
   const [form, setForm] = useState(emptyForm);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [picTouched, setPicTouched] = useState(false);
 
-  const [dateFilter, setDateFilter] = useState(
-    new Date().toISOString().slice(0, 10)
-  );
+  const [dateFilter, setDateFilter] = useState(() => toLocalDateString(new Date()));
   const [shiftFilter, setShiftFilter] = useState("all");
   const [machineFilter, setMachineFilter] = useState("all");
+
+  useEffect(() => {
+    const syncExternal = () => {
+      setEvents(loadEvents());
+      setShiftPicList(safeReadArray(SHIFT_PIC_KEY));
+      setProductionList(safeReadArray(PRODUCTION_KEY));
+    };
+    window.addEventListener("storage", syncExternal);
+    window.addEventListener("yahata-storage-updated", syncExternal);
+    return () => {
+      window.removeEventListener("storage", syncExternal);
+      window.removeEventListener("yahata-storage-updated", syncExternal);
+    };
+  }, []);
 
   const persist = (updated) => {
     setEvents(updated);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event("yahata-storage-updated"));
   };
 
-  const filteredEvents = useMemo(() => {
-    return events.filter((event) => {
-      const eventDate = event.startAt?.slice(0, 10);
-      const shift = getShift(event.startAt);
+  const knownPics = useMemo(() => {
+    const list = [
+      ...shiftPicList.map((r) => r.pic),
+      ...events.map((r) => r.pic),
+      ...productionList.map((r) => r.pic),
+    ]
+      .map((p) => String(p || "").trim())
+      .filter(Boolean);
+    return [...new Set(list)].sort((a, b) => a.localeCompare(b, "id"));
+  }, [shiftPicList, events, productionList]);
 
-      return (
-        (!dateFilter || eventDate === dateFilter) &&
-        (shiftFilter === "all" || shift === shiftFilter) &&
-        (machineFilter === "all" || event.machine === machineFilter)
-      );
-    }).sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
+  useEffect(() => {
+    if (!showForm || picTouched || editingId) return;
+    const autoPic = findAssignedPicForDowntime(shiftPicList, form.startAt, form.machine);
+    if (autoPic) {
+      setForm((prev) => (prev.pic === autoPic ? prev : { ...prev, pic: autoPic }));
+    }
+  }, [showForm, shiftPicList, form.startAt, form.machine, picTouched, editingId]);
+
+  const filteredEvents = useMemo(() => {
+    return events
+      .filter((event) => {
+        const eventDate = event.startAt ? toLocalDateString(event.startAt) : "";
+        const shift = getShift(event.startAt);
+
+        return (
+          (!dateFilter || eventDate === dateFilter) &&
+          (shiftFilter === "all" || shift === shiftFilter) &&
+          (machineFilter === "all" || event.machine === machineFilter)
+        );
+      })
+      .sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
   }, [events, dateFilter, shiftFilter, machineFilter]);
 
-  const downtimeEvents = filteredEvents.filter(
-    (event) => CATEGORIES.includes(event.category)
+  const downtimeEvents = filteredEvents.filter((event) =>
+    CATEGORIES.includes(event.category)
   );
 
   const totalMinutes = downtimeEvents.reduce(
@@ -141,27 +210,33 @@ export default function Downtime() {
         0
       ),
     };
-  }).filter((item) => item.count > 0)
+  })
+    .filter((item) => item.count > 0)
     .sort((a, b) => b.minutes - a.minutes);
 
   const openNewForm = () => {
+    const nowText = toLocalInputValue(new Date());
+    const defaultMachine = MACHINES[0] || "";
+    const autoPic = findAssignedPicForDowntime(shiftPicList, nowText, defaultMachine);
     setEditingId(null);
+    setPicTouched(false);
     setForm({
       ...emptyForm(),
-      startAt: toLocalInputValue(new Date()),
+      machine: defaultMachine,
+      startAt: nowText,
+      pic: autoPic,
     });
     setShowForm(true);
   };
 
   const openEditForm = (event) => {
     setEditingId(event.id);
+    setPicTouched(true);
     setForm({
       machine: event.machine,
       category: event.category,
       startAt: toLocalInputValue(new Date(event.startAt)),
-      endAt: event.endAt
-        ? toLocalInputValue(new Date(event.endAt))
-        : "",
+      endAt: event.endAt ? toLocalInputValue(new Date(event.endAt)) : "",
       pic: event.pic || "",
       notes: event.notes || "",
     });
@@ -171,6 +246,7 @@ export default function Downtime() {
   const closeForm = () => {
     setShowForm(false);
     setEditingId(null);
+    setPicTouched(false);
     setForm(emptyForm());
   };
 
@@ -235,7 +311,7 @@ export default function Downtime() {
     };
 
     const updated = editingId
-      ? events.map((event) => event.id === editingId ? record : event)
+      ? events.map((event) => (event.id === editingId ? record : event))
       : [...events, record];
 
     persist(updated);
@@ -511,9 +587,12 @@ export default function Downtime() {
       </section>
 
       {showForm && (
-        <div className="dt-modal-backdrop" onMouseDown={(e) => {
-          if (e.target === e.currentTarget) closeForm();
-        }}>
+        <div
+          className="dt-modal-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeForm();
+          }}
+        >
           <form className="dt-modal" onSubmit={handleSave}>
             <div className="dt-modal-heading">
               <div>
@@ -572,10 +651,19 @@ export default function Downtime() {
               <label>
                 PIC
                 <input
+                  list="dt-known-pics"
                   value={form.pic}
-                  onChange={(e) => setForm({ ...form, pic: e.target.value })}
-                  placeholder="Nama penanggung jawab"
+                  onChange={(e) => {
+                    setPicTouched(true);
+                    setForm({ ...form, pic: e.target.value });
+                  }}
+                  placeholder="Otomatis dari Shift & PIC (bisa diubah)"
                 />
+                <datalist id="dt-known-pics">
+                  {knownPics.map((picName) => (
+                    <option key={picName} value={picName} />
+                  ))}
+                </datalist>
               </label>
 
               <label>

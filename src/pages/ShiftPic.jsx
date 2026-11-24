@@ -1,453 +1,667 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MACHINES, SHIFTS } from "../config";
 
-const STORAGE_KEY = "yahataShiftPicRecords";
+const SHIFT_PIC_STORAGE_KEY = "yahataShiftPicRecords";
+const MASTER_STORAGE_KEY = "yahataMasterProduction";
+const PRODUCTION_STORAGE_KEY = "yahataProductionRecords";
 
-const emptyForm = () => ({
-  date: new Date().toLocaleDateString("en-CA"),
-  shift: "Shift 1",
-  machine: MACHINES[0] || "",
-  pic: "",
-  notes: "",
-});
+const DEFAULT_PIC_ASSIGNMENTS = [
+  { group: "Grup 1", shift: "Shift 1", pic: "Iis Iskandar", machines: ["NF-19B", "BP-450", "YDP-136", "PF-860"] },
+  { group: "Grup 1", shift: "Shift 1", pic: "Achmad Syaiful", machines: ["CBP-105", "CBP-136", "HBF-823", "YH-1552"] },
+  { group: "Grup 1", shift: "Shift 1", pic: "Nanda Ferry C", machines: ["CBP-106", "NP-12", "HBF-823 NEW", "HM-676"] },
 
-function loadRecords() {
+  { group: "Grup 2", shift: "Shift 2", pic: "Fiki Firmansyah", machines: ["NF-19B", "YDP-136", "CBP-106", "PF-860"] },
+  { group: "Grup 2", shift: "Shift 2", pic: "Yossi Tera P", machines: ["CBP-105", "CBP-136", "BP-450", "HM-676"] },
+  { group: "Grup 2", shift: "Shift 2", pic: "Wakyudi", machines: ["HBF-823 NEW", "NP-12", "HBF-823"] },
+
+  { group: "Normal Shift", shift: "Shift 1", pic: "Jason", machines: ["ZH-30200", "HM-552"] },
+];
+
+const ONE_SHIFT_RED_MACHINES = new Set([
+  "PF-860",
+  "YH-1552",
+  "HM-676",
+  "ZH-30200",
+  "HM-552",
+]);
+
+const getToday = () => {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+};
+
+function safeReadArray(key) {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    return Array.isArray(saved) ? saved : [];
+    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
-function formatDate(date) {
-  if (!date) return "-";
+function getDefaultPicForMachine(shiftName, machineName) {
+  const shiftMatches = DEFAULT_PIC_ASSIGNMENTS.filter(
+    (entry) =>
+      entry.shift === shiftName &&
+      entry.machines.includes(machineName)
+  );
 
-  return new Date(`${date}T00:00:00`).toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
+  if (shiftMatches.length > 0) {
+    return shiftMatches[0].pic;
+  }
+
+  const normalJason = DEFAULT_PIC_ASSIGNMENTS.find(
+    (entry) =>
+      entry.group === "Normal Shift" &&
+      entry.machines.includes(machineName)
+  );
+
+  return normalJason ? normalJason.pic : "";
+}
+
+function formatNumber(val) {
+  return Number(val || 0).toLocaleString("id-ID");
 }
 
 export default function ShiftPic() {
-  const [records, setRecords] = useState(loadRecords);
-  const [form, setForm] = useState(emptyForm);
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-
-  const [dateFilter, setDateFilter] = useState(
-    new Date().toLocaleDateString("en-CA")
-  );
-  const [shiftFilter, setShiftFilter] = useState("all");
-  const [machineFilter, setMachineFilter] = useState("all");
-
-  const persist = (updated) => {
-    setRecords(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  };
-
-  const filteredRecords = useMemo(() => {
-    return records
-      .filter((item) =>
-        (!dateFilter || item.date === dateFilter) &&
-        (shiftFilter === "all" || item.shift === shiftFilter) &&
-        (machineFilter === "all" || item.machine === machineFilter)
-      )
-      .sort((a, b) => {
-        if (a.date !== b.date) return b.date.localeCompare(a.date);
-        return a.machine.localeCompare(b.machine);
-      });
-  }, [records, dateFilter, shiftFilter, machineFilter]);
-
-  const todayRecords = records.filter(
-    (item) => item.date === new Date().toLocaleDateString("en-CA")
+  const [records, setRecords] = useState(() =>
+    safeReadArray(SHIFT_PIC_STORAGE_KEY)
   );
 
-  const shift1Count = todayRecords.filter(
-    (item) => item.shift === "Shift 1"
-  ).length;
+  const [productionRecords, setProductionRecords] = useState(() =>
+    safeReadArray(PRODUCTION_STORAGE_KEY)
+  );
 
-  const shift2Count = todayRecords.filter(
-    (item) => item.shift === "Shift 2"
-  ).length;
+  const [masters, setMasters] = useState(() =>
+    safeReadArray(MASTER_STORAGE_KEY)
+  );
 
-  const assignedMachines = new Set(
-    todayRecords.map((item) => item.machine)
-  ).size;
+  const [date, setDate] = useState(getToday);
+  const [shift, setShift] = useState("Shift 1");
+  const [machine, setMachine] = useState(
+    MACHINES[0] || "NF-19B"
+  );
 
-  const openNewForm = () => {
-    setEditingId(null);
-    setForm(emptyForm());
-    setShowForm(true);
-  };
+  const [pic, setPic] = useState(() =>
+    getDefaultPicForMachine(
+      "Shift 1",
+      MACHINES[0] || "NF-19B"
+    )
+  );
 
-  const openEditForm = (item) => {
-    setEditingId(item.id);
-    setForm({
-      date: item.date,
-      shift: item.shift,
-      machine: item.machine,
-      pic: item.pic,
-      notes: item.notes || "",
+  const [notes, setNotes] = useState("");
+  const [notice, setNotice] = useState(null);
+
+  // =====================================
+  // NOTIFICATION
+  // =====================================
+
+  const showNotification = (message, type = "success") => {
+    setNotice({
+      message,
+      type,
+      id: Date.now(),
     });
-    setShowForm(true);
   };
 
-  const closeForm = () => {
-    setShowForm(false);
-    setEditingId(null);
-    setForm(emptyForm());
+  useEffect(() => {
+    if (!notice) return;
+
+    const timer = setTimeout(() => {
+      setNotice(null);
+    }, 3500);
+
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  // =====================================
+  // RELOAD DATA
+  // =====================================
+
+  const reloadAll = () => {
+    setRecords(safeReadArray(SHIFT_PIC_STORAGE_KEY));
+    setProductionRecords(safeReadArray(PRODUCTION_STORAGE_KEY));
+    setMasters(safeReadArray(MASTER_STORAGE_KEY));
   };
 
-  const handleSave = (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    window.addEventListener("storage", reloadAll);
+    window.addEventListener("yahata-storage-updated", reloadAll);
 
-    if (!form.pic.trim()) {
-      alert("Nama PIC wajib diisi.");
-      return;
-    }
+    return () => {
+      window.removeEventListener("storage", reloadAll);
+      window.removeEventListener(
+        "yahata-storage-updated",
+        reloadAll
+      );
+    };
+  }, []);
 
-    const duplicate = records.some(
-      (item) =>
-        item.id !== editingId &&
-        item.date === form.date &&
-        item.shift === form.shift &&
-        item.machine === form.machine
+  // =====================================
+  // AUTO LOAD PIC
+  // =====================================
+
+  useEffect(() => {
+    const existing = records.find(
+      (r) =>
+        r.date === date &&
+        r.shift === shift &&
+        r.machine === machine
     );
 
-    if (duplicate) {
-      alert("Mesin ini sudah memiliki penugasan PIC pada tanggal dan shift tersebut.");
+    if (existing) {
+      setPic(existing.pic || "");
+      setNotes(existing.notes || "");
+    } else {
+      const fromMaster = masters.find(
+        (m) => m.machine === machine
+      );
+
+      const masterPic =
+        shift === "Shift 1"
+          ? fromMaster?.picShift1
+          : fromMaster?.picShift2;
+
+      setPic(
+        masterPic ||
+          getDefaultPicForMachine(shift, machine)
+      );
+
+      setNotes("");
+    }
+  }, [date, shift, machine, records, masters]);
+
+  // =====================================
+  // SAVE LOCAL STORAGE
+  // =====================================
+
+  const persistRecords = (nextList) => {
+    try {
+      localStorage.setItem(
+        SHIFT_PIC_STORAGE_KEY,
+        JSON.stringify(nextList)
+      );
+
+      setRecords(nextList);
+
+      window.dispatchEvent(
+        new Event("yahata-storage-updated")
+      );
+
+      return true;
+    } catch (error) {
+      console.error("Gagal menyimpan data PIC:", error);
+      showNotification(
+        "Gagal menyimpan data. Periksa penyimpanan browser.",
+        "error"
+      );
+      return false;
+    }
+  };
+
+  // =====================================
+  // SAVE SINGLE PIC
+  // =====================================
+
+  const handleSaveSingle = (e) => {
+    e.preventDefault();
+
+    if (!date || !shift || !machine || !pic.trim()) {
+      showNotification(
+        "Tanggal, Shift, Mesin, dan nama PIC wajib diisi.",
+        "error"
+      );
       return;
     }
 
-    const record = {
-      id: editingId || `PIC-${Date.now()}`,
-      date: form.date,
-      shift: form.shift,
-      machine: form.machine,
-      pic: form.pic.trim(),
-      notes: form.notes.trim(),
+    const cleanPic = pic.trim();
+
+    const id = `${date}__${shift}__${machine}`;
+
+    const nextItem = {
+      id,
+      date,
+      shift,
+      machine,
+      pic: cleanPic,
+      notes: notes.trim(),
       updatedAt: new Date().toISOString(),
     };
 
-    const updated = editingId
-      ? records.map((item) => item.id === editingId ? record : item)
-      : [...records, record];
+    const withoutCurrent = records.filter(
+      (r) =>
+        !(
+          r.date === date &&
+          r.shift === shift &&
+          r.machine === machine
+        )
+    );
 
-    persist(updated);
-    closeForm();
+    const saved = persistRecords([
+      nextItem,
+      ...withoutCurrent,
+    ]);
+
+    if (saved) {
+      showNotification(
+        `PIC ${cleanPic} berhasil disimpan untuk ${machine}.`
+      );
+    }
   };
 
-  const deleteRecord = (item) => {
-    if (!window.confirm(`Hapus penugasan PIC mesin ${item.machine}?`)) return;
+  // =====================================
+  // AUTO POPULATE ALL MACHINES
+  // =====================================
 
-    persist(records.filter((record) => record.id !== item.id));
+  const handleAutoPopulateShift = () => {
+    if (!date || !shift) {
+      showNotification(
+        "Tanggal dan shift wajib dipilih.",
+        "error"
+      );
+      return;
+    }
+
+    const otherDateShift = records.filter(
+      (r) => !(r.date === date && r.shift === shift)
+    );
+
+    const currentDateShiftMap = new Map(
+      records
+        .filter(
+          (r) => r.date === date && r.shift === shift
+        )
+        .map((r) => [r.machine, r])
+    );
+
+    const generated = MACHINES.map((mName) => {
+      const prev = currentDateShiftMap.get(mName);
+      const defaultPic = getDefaultPicForMachine(
+        shift,
+        mName
+      );
+
+      return {
+        id: `${date}__${shift}__${mName}`,
+        date,
+        shift,
+        machine: mName,
+        pic: prev?.pic || defaultPic || "-",
+        notes:
+          prev?.notes ||
+          (ONE_SHIFT_RED_MACHINES.has(mName)
+            ? "Running 1 shift (jadwal)"
+            : ""),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    const saved = persistRecords([
+      ...generated,
+      ...otherDateShift,
+    ]);
+
+    if (saved) {
+      showNotification(
+        `Berhasil mengisi ${MACHINES.length} mesin untuk ${shift}.`
+      );
+    }
   };
 
-  const resetFilters = () => {
-    setDateFilter("");
-    setShiftFilter("all");
-    setMachineFilter("all");
+  // =====================================
+  // DELETE PIC
+  // =====================================
+
+  const handleDeleteRecord = (recordId) => {
+    const confirmed = window.confirm(
+      "Yakin ingin menghapus penugasan PIC ini?"
+    );
+
+    if (!confirmed) return;
+
+    const nextList = records.filter(
+      (r) => r.id !== recordId
+    );
+
+    const deleted = persistRecords(nextList);
+
+    if (deleted) {
+      showNotification(
+        "Data penugasan PIC berhasil dihapus."
+      );
+    }
   };
 
-  const getShiftSchedule = (shiftName) => {
-    const shift = SHIFTS.find((item) => item.name === shiftName);
-    return shift?.schedule || "-";
-  };
+  // =====================================
+  // ACTIVE SHIFT RECORDS
+  // =====================================
+
+  const activeShiftRecords = useMemo(() => {
+    return MACHINES.map((mName) => {
+      const saved = records.find(
+        (r) =>
+          r.date === date &&
+          r.shift === shift &&
+          r.machine === mName
+      );
+
+      const fallbackPic = getDefaultPicForMachine(
+        shift,
+        mName
+      );
+
+      const effectivePic =
+        saved?.pic || fallbackPic || "-";
+
+      const prodOutput = productionRecords
+        .filter(
+          (p) =>
+            p.date === date &&
+            p.machine === mName &&
+            (
+              String(p.shift) ===
+                (shift === "Shift 1" ? "1" : "2") ||
+              p.shift === shift
+            )
+        )
+        .reduce(
+          (sum, item) =>
+            sum + Number(item.output || 0),
+          0
+        );
+
+      return {
+        id:
+          saved?.id ||
+          `${date}__${shift}__${mName}`,
+        date,
+        shift,
+        machine: mName,
+        pic: effectivePic,
+        isSaved: Boolean(saved),
+        oneShiftRule:
+          ONE_SHIFT_RED_MACHINES.has(mName),
+        notes: saved?.notes || "",
+        prodOutput,
+      };
+    });
+  }, [records, productionRecords, date, shift]);
+
+  // =====================================
+  // MANPOWER SUMMARY
+  // =====================================
+
+  const manpowerSummary = useMemo(() => {
+    const map = new Map();
+
+    activeShiftRecords.forEach((row) => {
+      const key = row.pic || "-";
+
+      if (!map.has(key)) {
+        map.set(key, {
+          pic: key,
+          machines: [],
+          totalOutput: 0,
+        });
+      }
+
+      const entry = map.get(key);
+
+      entry.machines.push(row.machine);
+      entry.totalOutput += row.prodOutput;
+    });
+
+    return [...map.values()].sort(
+      (a, b) => a.pic.localeCompare(b.pic)
+    );
+  }, [activeShiftRecords]);
+
+  // =====================================
+  // RENDER
+  // =====================================
 
   return (
-    <div className="sp-page">
-      <div className="sp-heading">
+    <div className="rp-page">
+      {/* TOAST NOTIFICATION */}
+      {notice && (
+        <div
+          key={notice.id}
+          className={`rp-toast ${notice.type}`}
+          role="alert"
+          aria-live="assertive"
+        >
+          <span className="rp-toast-icon">
+            {notice.type === "success" ? "✓" : "!"}
+          </span>
+
+          <span className="rp-toast-message">
+            {notice.message}
+          </span>
+
+          <button
+            type="button"
+            className="rp-toast-close"
+            onClick={() => setNotice(null)}
+            aria-label="Tutup notifikasi"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      <div className="rp-heading">
         <div>
-          <div className="sp-eyebrow">PRODUCTION MANAGEMENT / HUMAN RESOURCES</div>
-          <h1>Shift & PIC Management</h1>
-          <p>Pengelolaan jadwal kerja dan penugasan PIC mesin area Forming.</p>
+          <div className="rp-eyebrow">
+            MANPOWER & SHIFT ASSIGNMENT
+          </div>
+
+          <h1>Shift & PIC</h1>
+
+          <p>
+            Pengaturan operator (Man Power) per mesin
+            pada tanggal dan shift area Forming.
+          </p>
         </div>
 
-        <button className="sp-primary-btn" onClick={openNewForm}>
-          + Tambah Penugasan
+        <button
+          type="button"
+          className="rp-refresh-btn"
+          onClick={handleAutoPopulateShift}
+        >
+          ⚡ Auto-Isi Semua Mesin ({shift})
         </button>
       </div>
 
-      <section className="sp-shift-grid">
-        <div className="sp-shift-card">
-          <div className="sp-shift-top">
-            <div className="sp-shift-icon">01</div>
-            <span className="sp-shift-label">SHIFT PAGI</span>
-          </div>
-          <h2>Shift 1</h2>
-          <strong className="sp-shift-time">06:00 – 15:00</strong>
-          <div className="sp-shift-footer">
-            <span>Penugasan hari ini</span>
-            <strong>{shift1Count} mesin</strong>
-          </div>
-        </div>
-
-        <div className="sp-shift-card second">
-          <div className="sp-shift-top">
-            <div className="sp-shift-icon">02</div>
-            <span className="sp-shift-label">SHIFT SORE</span>
-          </div>
-          <h2>Shift 2</h2>
-          <strong className="sp-shift-time">15:00 – 23:00</strong>
-          <div className="sp-shift-footer">
-            <span>Penugasan hari ini</span>
-            <strong>{shift2Count} mesin</strong>
-          </div>
-        </div>
-      </section>
-
-      <section className="sp-stats">
-        <div className="sp-stat-card">
-          <div className="sp-stat-icon blue">▦</div>
-          <div>
-            <span>Total Mesin</span>
-            <strong>{MACHINES.length}</strong>
-            <small>Area Forming</small>
-          </div>
-        </div>
-
-        <div className="sp-stat-card">
-          <div className="sp-stat-icon green">✓</div>
-          <div>
-            <span>Mesin Terjadwal</span>
-            <strong>{assignedMachines}</strong>
-            <small>Hari ini, lintas shift</small>
-          </div>
-        </div>
-
-        <div className="sp-stat-card">
-          <div className="sp-stat-icon orange">!</div>
-          <div>
-            <span>Belum Terjadwal</span>
-            <strong>{MACHINES.length - assignedMachines}</strong>
-            <small>Hari ini, lintas shift</small>
-          </div>
-        </div>
-
-        <div className="sp-stat-card">
-          <div className="sp-stat-icon navy">♙</div>
-          <div>
-            <span>Total Penugasan</span>
-            <strong>{todayRecords.length}</strong>
-            <small>Hari ini</small>
-          </div>
-        </div>
-      </section>
-
-      <section className="sp-schedule-section">
-        <div className="sp-section-heading">
-          <div>
-            <h2>Jadwal Operasional</h2>
-            <p>Jam kerja yang digunakan dalam sistem monitoring.</p>
-          </div>
-        </div>
-
-        <div className="sp-schedule-table">
-          <div className="sp-schedule-row header">
-            <span>SHIFT</span>
-            <span>JAM MULAI</span>
-            <span>JAM SELESAI</span>
-            <span>DURASI</span>
-          </div>
-          <div className="sp-schedule-row">
-            <strong>Shift 1</strong>
-            <span>06:00</span>
-            <span>15:00</span>
-            <span>9 jam</span>
-          </div>
-          <div className="sp-schedule-row">
-            <strong>Shift 2</strong>
-            <span>15:00</span>
-            <span>23:00</span>
-            <span>8 jam</span>
-          </div>
-        </div>
-        <p className="sp-schedule-note">
-          Catatan: jadwal istirahat tidak dimasukkan sebagai pengurangan jam shift.
-          Jadwal istirahat Jumat 11:30–12:30 telah diketahui.
-        </p>
-      </section>
-
-      <section className="sp-history-section">
-        <div className="sp-section-heading">
-          <div>
-            <h2>Penugasan PIC</h2>
-            <p>Daftar operator atau penanggung jawab setiap mesin.</p>
-          </div>
-          <span className="sp-record-count">{filteredRecords.length} RECORDS</span>
-        </div>
-
-        <div className="sp-filters">
+      <section className="rp-filter-panel">
+        <form
+          onSubmit={handleSaveSingle}
+          className="rp-filters"
+        >
           <label>
             Tanggal
             <input
               type="date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
             />
           </label>
 
           <label>
             Shift
             <select
-              value={shiftFilter}
-              onChange={(e) => setShiftFilter(e.target.value)}
+              value={shift}
+              onChange={(e) => setShift(e.target.value)}
             >
-              <option value="all">Semua Shift</option>
-              <option value="Shift 1">Shift 1</option>
-              <option value="Shift 2">Shift 2</option>
+              {SHIFTS.map((s) => (
+                <option key={s.id} value={s.name}>
+                  {s.name} ({s.start}–{s.end})
+                </option>
+              ))}
             </select>
           </label>
 
           <label>
             Mesin
             <select
-              value={machineFilter}
-              onChange={(e) => setMachineFilter(e.target.value)}
+              value={machine}
+              onChange={(e) => setMachine(e.target.value)}
             >
-              <option value="all">Semua Mesin</option>
-              {MACHINES.map((machine) => (
-                <option key={machine} value={machine}>{machine}</option>
+              {MACHINES.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
               ))}
             </select>
           </label>
 
-          <button className="sp-reset-btn" onClick={resetFilters}>
-            Reset Filter
+          <label>
+            Nama PIC
+            <input
+              type="text"
+              value={pic}
+              onChange={(e) => setPic(e.target.value)}
+              placeholder="Nama operator"
+            />
+          </label>
+
+          <label>
+            Catatan
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Opsional"
+            />
+          </label>
+
+          <button
+            type="submit"
+            className="rp-reset-btn"
+          >
+            Simpan PIC
           </button>
+        </form>
+      </section>
+
+      <section className="rp-panel">
+        <div className="rp-panel-heading">
+          <div>
+            <h2>
+              Rekap Manpower ({date} · {shift})
+            </h2>
+            <p>
+              Daftar mesin yang dipegang dan output
+              shift per operator.
+            </p>
+          </div>
         </div>
 
-        <div className="sp-table-wrap">
-          <table className="sp-table">
+        <div className="rp-shift-summary">
+          {manpowerSummary.map((person) => (
+            <div
+              className="rp-shift-item"
+              key={person.pic}
+            >
+              <div className="rp-shift-number">
+                <span>{person.pic}</span>
+                <strong>
+                  {person.machines.length} Mesin (
+                  {person.machines.join(", ")})
+                </strong>
+              </div>
+
+              <strong className="rp-shift-duration">
+                {formatNumber(person.totalOutput)} pcs
+              </strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rp-panel">
+        <div className="rp-panel-heading">
+          <div>
+            <h2>
+              Daftar Penugasan 14 Mesin ({date} · {shift})
+            </h2>
+            <p>
+              Penanda warna merah menandakan mesin
+              running 1 shift sesuai jadwal.
+            </p>
+          </div>
+        </div>
+
+        <div className="rp-table-wrap">
+          <table className="rp-table">
             <thead>
               <tr>
-                <th>TANGGAL</th>
-                <th>SHIFT</th>
-                <th>JADWAL</th>
                 <th>MESIN</th>
-                <th>NAMA PIC</th>
+                <th>PIC</th>
+                <th>OUTPUT SHIFT</th>
+                <th>STATUS</th>
                 <th>CATATAN</th>
                 <th>AKSI</th>
               </tr>
             </thead>
+
             <tbody>
-              {filteredRecords.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="sp-empty">
-                    <strong>Belum ada penugasan PIC</strong>
-                    <p>Tambahkan data penugasan untuk mulai mengelola PIC mesin.</p>
+              {activeShiftRecords.map((row) => (
+                <tr key={row.id}>
+                  <td>
+                    <strong
+                      className={
+                        row.oneShiftRule
+                          ? "rp-event-status active"
+                          : ""
+                      }
+                    >
+                      {row.machine}
+                    </strong>
+                  </td>
+
+                  <td>
+                    <strong>{row.pic}</strong>
+                  </td>
+
+                  <td>
+                    {formatNumber(row.prodOutput)} pcs
+                  </td>
+
+                  <td>
+                    {row.isSaved
+                      ? "Tersimpan"
+                      : "Default Excel"}
+                  </td>
+
+                  <td>
+                    {row.notes ||
+                      (row.oneShiftRule
+                        ? "Running 1 shift (jadwal)"
+                        : "—")}
+                  </td>
+
+                  <td>
+                    {row.isSaved ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleDeleteRecord(row.id)
+                        }
+                      >
+                        Hapus
+                      </button>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                 </tr>
-              ) : (
-                filteredRecords.map((item) => (
-                  <tr key={item.id}>
-                    <td>{formatDate(item.date)}</td>
-                    <td>
-                      <span className={`sp-shift-badge ${item.shift === "Shift 1" ? "morning" : "afternoon"}`}>
-                        {item.shift}
-                      </span>
-                    </td>
-                    <td>{getShiftSchedule(item.shift)}</td>
-                    <td><strong className="sp-machine">{item.machine}</strong></td>
-                    <td><strong>{item.pic}</strong></td>
-                    <td>{item.notes || "—"}</td>
-                    <td>
-                      <div className="sp-actions">
-                        <button onClick={() => openEditForm(item)}>Edit</button>
-                        <button className="delete" onClick={() => deleteRecord(item)}>Hapus</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>
       </section>
-
-      {showForm && (
-        <div className="sp-modal-backdrop" onMouseDown={(e) => {
-          if (e.target === e.currentTarget) closeForm();
-        }}>
-          <form className="sp-modal" onSubmit={handleSave}>
-            <div className="sp-modal-heading">
-              <div>
-                <span>PIC ASSIGNMENT</span>
-                <h2>{editingId ? "Edit Penugasan" : "Tambah Penugasan PIC"}</h2>
-                <p>Masukkan data penanggung jawab mesin.</p>
-              </div>
-              <button type="button" onClick={closeForm}>×</button>
-            </div>
-
-            <div className="sp-modal-body">
-              <label>
-                Tanggal Penugasan
-                <input
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => setForm({ ...form, date: e.target.value })}
-                  required
-                />
-              </label>
-
-              <label>
-                Shift
-                <select
-                  value={form.shift}
-                  onChange={(e) => setForm({ ...form, shift: e.target.value })}
-                >
-                  <option value="Shift 1">Shift 1 (06:00–15:00)</option>
-                  <option value="Shift 2">Shift 2 (15:00–23:00)</option>
-                </select>
-              </label>
-
-              <label>
-                Mesin
-                <select
-                  value={form.machine}
-                  onChange={(e) => setForm({ ...form, machine: e.target.value })}
-                >
-                  {MACHINES.map((machine) => (
-                    <option key={machine} value={machine}>{machine}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Nama PIC
-                <input
-                  value={form.pic}
-                  onChange={(e) => setForm({ ...form, pic: e.target.value })}
-                  placeholder="Masukkan nama operator / PIC"
-                  required
-                />
-              </label>
-
-              <label>
-                Catatan
-                <textarea
-                  rows="3"
-                  value={form.notes}
-                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                  placeholder="Catatan tambahan (opsional)"
-                />
-              </label>
-            </div>
-
-            <div className="sp-modal-footer">
-              <button type="button" className="sp-cancel-btn" onClick={closeForm}>
-                Batal
-              </button>
-              <button type="submit" className="sp-primary-btn">
-                Simpan Penugasan
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,24 +1,56 @@
-
 import { useMemo, useState } from "react";
 import { MACHINES, DOWNTIME_CATEGORIES } from "../config";
+import FormingAnalyticsDashboard from "../components/FormingAnalyticsDashboard";
 
 const DOWNTIME_STORAGE_KEY = "yahataDowntimeEvents";
+const PRODUCTION_STORAGE_KEY = "yahataProductionRecords";
+const MASTER_STORAGE_KEY = "yahataMasterProduction";
+const SHIFT_PIC_STORAGE_KEY = "yahataShiftPicRecords";
 
-function loadDowntime() {
+function safeReadArray(key) {
   try {
-    const data = JSON.parse(localStorage.getItem(DOWNTIME_STORAGE_KEY) || "[]");
+    const data = JSON.parse(localStorage.getItem(key) || "[]");
     return Array.isArray(data) ? data : [];
   } catch {
     return [];
   }
 }
 
+function loadDowntime() {
+  return safeReadArray(DOWNTIME_STORAGE_KEY);
+}
+
+function loadProduction() {
+  return safeReadArray(PRODUCTION_STORAGE_KEY);
+}
+
+function loadMasters() {
+  return safeReadArray(MASTER_STORAGE_KEY);
+}
+
+function loadShiftPic() {
+  return safeReadArray(SHIFT_PIC_STORAGE_KEY);
+}
+
+// Handover Shift 1 ke Shift 2 (14:00 - 14:15) masuk ke Shift 1
 function getShift(dateString) {
+  if (!dateString) return "Di luar shift";
   const date = new Date(dateString);
+  if (!Number.isFinite(date.getTime())) return "Di luar shift";
   const minutes = date.getHours() * 60 + date.getMinutes();
 
-  if (minutes >= 360 && minutes < 900) return "Shift 1";
-  if (minutes >= 900 && minutes < 1380) return "Shift 2";
+  if (minutes >= 360 && minutes <= 855) return "Shift 1";
+  if (minutes > 855 && minutes < 1380) return "Shift 2";
+  return "Di luar shift";
+}
+
+function normalizeProductionShift(shiftVal) {
+  if (String(shiftVal) === "1" || shiftVal === "Shift 1" || shiftVal === "shift1") {
+    return "Shift 1";
+  }
+  if (String(shiftVal) === "2" || shiftVal === "Shift 2" || shiftVal === "shift2") {
+    return "Shift 2";
+  }
   return "Di luar shift";
 }
 
@@ -36,7 +68,12 @@ function formatDuration(minutes) {
   const remaining = minutes % 60;
 
   if (hours === 0) return `${remaining} menit`;
+  if (remaining === 0) return `${hours} jam`;
   return `${hours} jam ${remaining} menit`;
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString("id-ID");
 }
 
 function formatDate(date) {
@@ -50,16 +87,20 @@ function formatDate(date) {
 }
 
 function downloadCSV(filename, rows) {
-  const csv = rows
+  const csvBody = rows
     .map((row) =>
-      row.map((cell) => {
-        const value = String(cell ?? "").replace(/"/g, '""');
-        return `"${value}"`;
-      }).join(",")
+      row
+        .map((cell) => {
+          const value = String(cell ?? "").replace(/"/g, '""');
+          return `"${value}"`;
+        })
+        .join(",")
     )
     .join("\r\n");
 
-  const blob = new Blob(["\uFEFF" + csv], {
+  const csvWithExcelSep = `sep=,\r\n${csvBody}`;
+
+  const blob = new Blob(["\uFEFF" + csvWithExcelSep], {
     type: "text/csv;charset=utf-8;",
   });
 
@@ -75,6 +116,9 @@ function downloadCSV(filename, rows) {
 
 export default function Reports() {
   const [downtimeRecords, setDowntimeRecords] = useState(loadDowntime);
+  const [productionRecords, setProductionRecords] = useState(loadProduction);
+  const [masters, setMasters] = useState(loadMasters);
+  const [shiftPicRecords, setShiftPicRecords] = useState(loadShiftPic);
 
   const today = new Date().toLocaleDateString("en-CA");
 
@@ -83,19 +127,47 @@ export default function Reports() {
   const [shiftFilter, setShiftFilter] = useState("all");
   const [machineFilter, setMachineFilter] = useState("all");
 
-  const filteredRecords = useMemo(() => {
-    return downtimeRecords.filter((item) => {
-      const eventDate = item.startAt?.slice(0, 10);
-      const eventShift = getShift(item.startAt);
+  const refreshAllData = () => {
+    setDowntimeRecords(loadDowntime());
+    setProductionRecords(loadProduction());
+    setMasters(loadMasters());
+    setShiftPicRecords(loadShiftPic());
+  };
 
-      return (
-        (!startDate || eventDate >= startDate) &&
-        (!endDate || eventDate <= endDate) &&
-        (shiftFilter === "all" || eventShift === shiftFilter) &&
-        (machineFilter === "all" || item.machine === machineFilter)
-      );
-    });
+  const filteredRecords = useMemo(() => {
+    return downtimeRecords
+      .filter((item) => {
+        const eventDate = item.startAt?.slice(0, 10);
+        const eventShift = getShift(item.startAt);
+
+        return (
+          (!startDate || eventDate >= startDate) &&
+          (!endDate || eventDate <= endDate) &&
+          (shiftFilter === "all" || eventShift === shiftFilter) &&
+          (machineFilter === "all" || item.machine === machineFilter)
+        );
+      })
+      .sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
   }, [downtimeRecords, startDate, endDate, shiftFilter, machineFilter]);
+
+  const filteredProduction = useMemo(() => {
+    return productionRecords
+      .filter((item) => {
+        const prodDate = item.date;
+        const prodShift = normalizeProductionShift(item.shift);
+
+        return (
+          (!startDate || prodDate >= startDate) &&
+          (!endDate || prodDate <= endDate) &&
+          (shiftFilter === "all" || prodShift === shiftFilter) &&
+          (machineFilter === "all" || item.machine === machineFilter)
+        );
+      })
+      .sort((a, b) => {
+        if (a.date !== b.date) return b.date.localeCompare(a.date);
+        return String(b.startTime || "").localeCompare(String(a.startTime || ""));
+      });
+  }, [productionRecords, startDate, endDate, shiftFilter, machineFilter]);
 
   const totalMinutes = filteredRecords.reduce(
     (total, item) => total + getDuration(item.startAt, item.endAt),
@@ -108,9 +180,118 @@ export default function Reports() {
     filteredRecords.map((item) => item.machine)
   ).size;
 
+  const totalProductionOutput = useMemo(
+    () =>
+      filteredProduction.reduce(
+        (sum, item) => sum + Number(item.output || 0),
+        0
+      ),
+    [filteredProduction]
+  );
+
+  const activeDatesCount = useMemo(() => {
+    const dateSet = new Set([
+      ...filteredProduction.map((p) => p.date).filter(Boolean),
+      ...filteredRecords.map((d) => d.startAt?.slice(0, 10)).filter(Boolean),
+    ]);
+    return Math.max(1, dateSet.size);
+  }, [filteredProduction, filteredRecords]);
+
+  const machineSummary = useMemo(() => {
+    const minutesPerDay =
+      shiftFilter === "Shift 1" ? 480 : shiftFilter === "Shift 2" ? 420 : 480;
+    const effectiveMinutes = minutesPerDay * activeDatesCount;
+
+    const targetMachines =
+      machineFilter === "all" ? MACHINES : [machineFilter];
+
+    return targetMachines
+      .map((machine) => {
+        const master = masters.find((m) => m.machine === machine);
+        const prodList = filteredProduction.filter((p) => p.machine === machine);
+        const dtList = filteredRecords.filter((d) => d.machine === machine);
+
+        const actualOutput = prodList.reduce(
+          (sum, item) => sum + Number(item.output || 0),
+          0
+        );
+        const dtMinutes = dtList.reduce(
+          (sum, item) => sum + getDuration(item.startAt, item.endAt),
+          0
+        );
+
+        const rpm = Number(master?.rpm || 0);
+        const pcsPerRev = Number(master?.pcsPerRev || 1) || 1;
+        const targetOutput = rpm > 0 ? Math.round(rpm * pcsPerRev * effectiveMinutes) : 0;
+
+        const productivity =
+          targetOutput > 0 ? (actualOutput / targetOutput) * 100 : null;
+        const efficiency =
+          effectiveMinutes > 0
+            ? Math.max(0, ((effectiveMinutes - dtMinutes) / effectiveMinutes) * 100)
+            : 100;
+
+        const partNumbers = [
+          ...new Set(
+            [master?.partNumber, ...prodList.map((p) => p.partNumber)]
+              .map((v) => String(v || "").trim())
+              .filter(Boolean)
+          ),
+        ];
+
+        const assignedPics = shiftPicRecords
+          .filter(
+            (sp) =>
+              sp.machine === machine &&
+              (!startDate || sp.date >= startDate) &&
+              (!endDate || sp.date <= endDate) &&
+              (shiftFilter === "all" || sp.shift === shiftFilter)
+          )
+          .map((sp) => sp.pic);
+
+        const allPics = [
+          ...new Set(
+            [
+              ...assignedPics,
+              ...prodList.map((p) => p.pic),
+              ...dtList.map((d) => d.pic),
+            ]
+              .map((v) => String(v || "").trim())
+              .filter(Boolean)
+          ),
+        ];
+
+        return {
+          machine,
+          partNumber: partNumbers.join(" / ") || "-",
+          rpm,
+          actualOutput,
+          targetOutput,
+          productivity,
+          dtMinutes,
+          dtCount: dtList.length,
+          efficiency,
+          pic: allPics.join(", ") || "-",
+          hasActivity: prodList.length > 0 || dtList.length > 0 || Boolean(master?.partNumber),
+        };
+      })
+      .filter((row) => machineFilter !== "all" || row.hasActivity);
+  }, [
+    masters,
+    filteredProduction,
+    filteredRecords,
+    shiftPicRecords,
+    machineFilter,
+    shiftFilter,
+    activeDatesCount,
+    startDate,
+    endDate,
+  ]);
+
   const categorySummary = useMemo(() => {
-    return DOWNTIME_CATEGORIES
-      .filter((category) => category !== "Running Production")
+    return DOWNTIME_CATEGORIES.filter(
+      (category) => category !== "Running Production"
+    )
       .map((category) => {
         const matching = filteredRecords.filter(
           (item) => item.category === category
@@ -153,7 +334,7 @@ export default function Reports() {
     setEndDate(today);
     setShiftFilter("all");
     setMachineFilter("all");
-    setDowntimeRecords(loadDowntime());
+    refreshAllData();
   };
 
   const exportDowntime = () => {
@@ -176,7 +357,9 @@ export default function Reports() {
         item.machine,
         item.category,
         item.startAt ? new Date(item.startAt).toLocaleString("id-ID") : "-",
-        item.endAt ? new Date(item.endAt).toLocaleString("id-ID") : "Masih berlangsung",
+        item.endAt
+          ? new Date(item.endAt).toLocaleString("id-ID")
+          : "Masih berlangsung",
         getDuration(item.startAt, item.endAt),
         item.pic || "-",
         item.notes || "-",
@@ -185,6 +368,41 @@ export default function Reports() {
     ];
 
     downloadCSV("Yahata_Downtime_Report.csv", rows);
+  };
+
+  const exportProduction = () => {
+    const rows = [
+      [
+        "Tanggal",
+        "Shift",
+        "Mesin",
+        "Part Number",
+        "Jam Mulai",
+        "Jam Selesai",
+        "Counter Awal",
+        "Counter Akhir",
+        "Output Aktual (pcs)",
+        "PIC",
+        "Catatan",
+      ],
+      ...filteredProduction.map((item) => [
+        item.date || "-",
+        normalizeProductionShift(item.shift),
+        item.machine,
+        item.partNumber || "-",
+        item.startTime || "-",
+        item.endTime || "-",
+        item.counterStart ?? "-",
+        item.counterEnd ?? "-",
+        Number(item.output || 0),
+        item.pic || "-",
+        item.notes || "-",
+      ]),
+      [],
+      ["Total Output (pcs)", "", "", "", "", "", "", "", totalProductionOutput, "", ""],
+    ];
+
+    downloadCSV("Yahata_Production_Report.csv", rows);
   };
 
   const exportCategorySummary = () => {
@@ -202,21 +420,135 @@ export default function Reports() {
     downloadCSV("Yahata_Downtime_Summary.csv", rows);
   };
 
+  const exportCompleteReport = () => {
+    const periodLabel = `${startDate || "Awal"} s/d ${endDate || "Akhir"}`;
+    const rows = [
+      ["LAPORAN LENGKAP PRODUKSI & DOWNTIME - PT YAHATA FASTENER INDONESIA"],
+      [
+        "Periode",
+        periodLabel,
+        "Shift",
+        shiftFilter === "all" ? "Semua Shift" : shiftFilter,
+        "Mesin",
+        machineFilter === "all" ? "Semua Mesin" : machineFilter,
+      ],
+      [],
+      ["1. RINGKASAN PERFORMA PER MESIN"],
+      [
+        "Mesin",
+        "Part Number",
+        "RPM Standar",
+        "Total Output (pcs)",
+        "Target Estimasi (pcs)",
+        "Productivity (%)",
+        "Total Downtime (Menit)",
+        "Kejadian Downtime",
+        "Efficiency (%)",
+        "PIC",
+      ],
+      ...machineSummary.map((row) => [
+        row.machine,
+        row.partNumber,
+        row.rpm || "-",
+        row.actualOutput,
+        row.targetOutput || "-",
+        row.productivity !== null ? `${row.productivity.toFixed(1)}%` : "-",
+        row.dtMinutes,
+        row.dtCount,
+        `${row.efficiency.toFixed(1)}%`,
+        row.pic,
+      ]),
+      [],
+      ["2. DETAIL HASIL PRODUKSI"],
+      [
+        "Tanggal",
+        "Shift",
+        "Mesin",
+        "Part Number",
+        "Jam Mulai",
+        "Jam Selesai",
+        "Counter Awal",
+        "Counter Akhir",
+        "Output Aktual (pcs)",
+        "PIC",
+        "Catatan",
+      ],
+      ...(filteredProduction.length === 0
+        ? [["Tidak ada catatan produksi pada periode ini"]]
+        : filteredProduction.map((item) => [
+            item.date || "-",
+            normalizeProductionShift(item.shift),
+            item.machine,
+            item.partNumber || "-",
+            item.startTime || "-",
+            item.endTime || "-",
+            item.counterStart ?? "-",
+            item.counterEnd ?? "-",
+            Number(item.output || 0),
+            item.pic || "-",
+            item.notes || "-",
+          ])),
+      [],
+      ["3. DETAIL KEJADIAN DOWNTIME"],
+      [
+        "Tanggal",
+        "Shift",
+        "Mesin",
+        "Kategori Downtime",
+        "Mulai",
+        "Selesai",
+        "Durasi (Menit)",
+        "PIC",
+        "Catatan",
+        "Status",
+      ],
+      ...(filteredRecords.length === 0
+        ? [["Tidak ada catatan downtime pada periode ini"]]
+        : filteredRecords.map((item) => [
+            item.startAt ? new Date(item.startAt).toLocaleDateString("id-ID") : "-",
+            getShift(item.startAt),
+            item.machine,
+            item.category,
+            item.startAt ? new Date(item.startAt).toLocaleString("id-ID") : "-",
+            item.endAt
+              ? new Date(item.endAt).toLocaleString("id-ID")
+              : "Masih berlangsung",
+            getDuration(item.startAt, item.endAt),
+            item.pic || "-",
+            item.notes || "-",
+            item.endAt ? "Selesai" : "Aktif",
+          ])),
+    ];
+
+    const fileDate = startDate === endDate ? startDate : `${startDate}_to_${endDate}`;
+    downloadCSV(`Yahata_Full_Report_${fileDate || "All"}.csv`, rows);
+  };
+
   return (
     <div className="rp-page">
       <div className="rp-heading">
         <div>
           <div className="rp-eyebrow">PRODUCTION MANAGEMENT / ANALYTICS</div>
           <h1>Production Reports</h1>
-          <p>Rekap aktivitas produksi dan downtime area Forming.</p>
+          <p>Rekap aktivitas produksi, PIC, dan downtime area Forming.</p>
         </div>
 
-        <button
-          className="rp-refresh-btn"
-          onClick={() => setDowntimeRecords(loadDowntime())}
-        >
-          ↻ Refresh Data
-        </button>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <button
+            className="rp-refresh-btn"
+            onClick={refreshAllData}
+          >
+            ↻ Refresh Data
+          </button>
+
+          <button
+            className="rp-refresh-btn"
+            style={{ background: "#0f2c59", color: "#fff", borderColor: "#0f2c59" }}
+            onClick={exportCompleteReport}
+          >
+            ↓ Export Full Report CSV
+          </button>
+        </div>
       </div>
 
       <section className="rp-filter-panel">
@@ -289,20 +621,20 @@ export default function Reports() {
 
       <section className="rp-stats">
         <div className="rp-stat-card">
-          <div className="rp-stat-icon blue">◷</div>
+          <div className="rp-stat-icon navy">▤</div>
           <div>
-            <span>Total Downtime</span>
-            <strong>{formatDuration(totalMinutes)}</strong>
-            <small>Durasi berdasarkan data terpilih</small>
+            <span>Total Produksi</span>
+            <strong>{formatNumber(totalProductionOutput)} pcs</strong>
+            <small>{filteredProduction.length} catatan produksi</small>
           </div>
         </div>
 
         <div className="rp-stat-card">
-          <div className="rp-stat-icon red">▣</div>
+          <div className="rp-stat-icon blue">◷</div>
           <div>
-            <span>Total Kejadian</span>
-            <strong>{filteredRecords.length}</strong>
-            <small>Catatan downtime</small>
+            <span>Total Downtime</span>
+            <strong>{formatDuration(totalMinutes)}</strong>
+            <small>{filteredRecords.length} kejadian tercatat</small>
           </div>
         </div>
 
@@ -316,12 +648,124 @@ export default function Reports() {
         </div>
 
         <div className="rp-stat-card">
-          <div className="rp-stat-icon navy">▦</div>
+          <div className="rp-stat-icon red">▦</div>
           <div>
-            <span>Mesin Terdampak</span>
+            <span>Mesin Terdampak DT</span>
             <strong>{affectedMachines}</strong>
             <small>Dari {MACHINES.length} mesin</small>
           </div>
+        </div>
+      </section>
+
+      <FormingAnalyticsDashboard
+        machineFilter={machineFilter}
+        productionRecords={filteredProduction}
+        downtimeRecords={filteredRecords}
+        masters={masters}
+      />
+
+      <section className="rp-panel rp-production-panel">
+        <div className="rp-panel-heading">
+          <div>
+            <h2>Machine Performance & Production Summary</h2>
+            <p>Rekap gabungan output aktual, target, downtime, dan PIC per mesin.</p>
+          </div>
+          <button onClick={exportCompleteReport}>↓ Export Semua Data CSV</button>
+        </div>
+
+        <div className="rp-table-wrap">
+          <table className="rp-table">
+            <thead>
+              <tr>
+                <th>MESIN</th>
+                <th>PART NUMBER</th>
+                <th>OUTPUT AKTUAL</th>
+                <th>TARGET</th>
+                <th>PRODUCTIVITY</th>
+                <th>DOWNTIME</th>
+                <th>EFFICIENCY</th>
+                <th>PIC</th>
+              </tr>
+            </thead>
+            <tbody>
+              {machineSummary.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="rp-empty">
+                    Belum ada data produksi maupun downtime pada periode ini.
+                  </td>
+                </tr>
+              ) : (
+                machineSummary.map((row) => (
+                  <tr key={row.machine}>
+                    <td><strong>{row.machine}</strong></td>
+                    <td>{row.partNumber}</td>
+                    <td><strong>{formatNumber(row.actualOutput)} pcs</strong></td>
+                    <td>{row.targetOutput > 0 ? `${formatNumber(row.targetOutput)} pcs` : "—"}</td>
+                    <td>{row.productivity !== null ? `${row.productivity.toFixed(1)}%` : "—"}</td>
+                    <td>{row.dtMinutes > 0 ? formatDuration(row.dtMinutes) : "0 menit"}</td>
+                    <td><strong>{row.efficiency.toFixed(1)}%</strong></td>
+                    <td>{row.pic}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="rp-panel">
+        <div className="rp-panel-heading">
+          <div>
+            <h2>Production Record Details</h2>
+            <p>Rincian pencatatan hasil produksi berdasarkan filter laporan.</p>
+          </div>
+
+          <button onClick={exportProduction}>↓ Export Production CSV</button>
+        </div>
+
+        <div className="rp-table-wrap">
+          <table className="rp-table">
+            <thead>
+              <tr>
+                <th>TANGGAL</th>
+                <th>SHIFT</th>
+                <th>MESIN</th>
+                <th>PART NUMBER</th>
+                <th>PERIODE</th>
+                <th>COUNTER</th>
+                <th>OUTPUT</th>
+                <th>PIC</th>
+                <th>CATATAN</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProduction.length === 0 ? (
+                <tr>
+                  <td colSpan="9" className="rp-empty">
+                    Tidak ada data produksi untuk filter ini.
+                  </td>
+                </tr>
+              ) : (
+                filteredProduction.map((item) => (
+                  <tr key={item.id}>
+                    <td>{formatDate(item.date)}</td>
+                    <td>{normalizeProductionShift(item.shift)}</td>
+                    <td><strong>{item.machine}</strong></td>
+                    <td>{item.partNumber || "-"}</td>
+                    <td>{item.startTime} - {item.endTime}</td>
+                    <td>
+                      {item.counterEnd !== undefined && item.counterEnd !== null && item.counterEnd !== ""
+                        ? `${formatNumber(item.counterStart)} → ${formatNumber(item.counterEnd)}`
+                        : "Manual"}
+                    </td>
+                    <td><strong>{formatNumber(item.output)} pcs</strong></td>
+                    <td>{item.pic || "—"}</td>
+                    <td>{item.notes || "—"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -388,29 +832,8 @@ export default function Reports() {
 
           <div className="rp-info-note">
             Downtime lintas shift dihitung seluruhnya pada shift ketika
-            kejadian dimulai, sesuai aturan pencatatan proyek.
+            kejadian dimulai (handover 14:00–14:15 masuk Shift 1).
           </div>
-        </div>
-      </section>
-
-      <section className="rp-panel rp-production-panel">
-        <div className="rp-panel-heading">
-          <div>
-            <h2>Production Summary</h2>
-            <p>Rekap output aktual seluruh mesin pada periode terpilih.</p>
-          </div>
-          <span className="rp-status-pending">Menunggu integrasi data</span>
-        </div>
-
-        <div className="rp-production-empty">
-          <div className="rp-production-icon">▤</div>
-          <strong>Data produksi belum tersedia untuk laporan</strong>
-          <p>
-            Halaman Production saat ini belum menyimpan riwayat input secara
-            permanen. Setelah penyimpanan data dan integrasi selesai, bagian
-            ini dapat menampilkan total output, output per mesin, Part Number,
-            dan tren produksi.
-          </p>
         </div>
       </section>
 
@@ -486,7 +909,7 @@ export default function Reports() {
 
       <div className="rp-footer-note">
         <span>YAHATA PRODUCTION MONITORING</span>
-        <span>Report generated from locally stored downtime records.</span>
+        <span>Report generated from locally stored production, PIC, and downtime records.</span>
       </div>
     </div>
   );

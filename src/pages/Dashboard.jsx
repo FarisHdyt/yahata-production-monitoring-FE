@@ -1,151 +1,438 @@
-
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MACHINES, SHIFTS, DOWNTIME_CATEGORIES } from "../config.js";
 
-const MOCK_MACHINES = [
-    { name: "BP-450", status: "running", actual: 1250, partNumber: "PN-001", pic: "Operator 1", rpm: 120 },
-    { name: "CBP-105", status: "running", actual: 980, partNumber: "PN-002", pic: "Operator 2", rpm: 110 },
-    { name: "CBP-106", status: "downtime", actual: 760, partNumber: "PN-003", pic: "Operator 3", rpm: 100, downtime: "Trouble Machine", duration: 35 },
-    { name: "CBP-136", status: "running", actual: 1430, partNumber: "PN-001", pic: "Operator 4", rpm: 125 },
-    { name: "HBF-823", status: "running", actual: 1100, partNumber: "PN-004", pic: "Operator 5", rpm: 115 },
-    { name: "HBF-823 NEW", status: "unconfirmed", actual: null, partNumber: "-", pic: "-", rpm: null },
-    { name: "HM-552", status: "running", actual: 890, partNumber: "PN-005", pic: "Operator 6", rpm: 105 },
-    { name: "HM-676", status: "stop", actual: 0, partNumber: "PN-006", pic: "Operator 7", rpm: null },
-    { name: "NF-19B", status: "running", actual: 1320, partNumber: "PN-002", pic: "Operator 8", rpm: 120 },
-    { name: "NP-12", status: "downtime", actual: 650, partNumber: "PN-007", pic: "Operator 9", rpm: 95, downtime: "Trouble Tooling", duration: 50 },
-    { name: "PF-860", status: "running", actual: 1180, partNumber: "PN-003", pic: "Operator 10", rpm: 110 },
-    { name: "YDP-136", status: "running", actual: 1050, partNumber: "PN-004", pic: "Operator 11", rpm: 100 },
-    { name: "YH-1552", status: "needs_confirmation", actual: null, partNumber: "PN-005", pic: "Operator 12", rpm: null },
-    { name: "ZH-30200", status: "running", actual: 1380, partNumber: "PN-006", pic: "Operator 13", rpm: 125 }
-];
+const PRODUCTION_STORAGE_KEY = "yahataProductionRecords";
+const DOWNTIME_STORAGE_KEY = "yahataDowntimeEvents";
+const MASTER_STORAGE_KEY = "yahataMasterProduction";
+const SHIFT_PIC_STORAGE_KEY = "yahataShiftPicRecords";
 
-const MOCK_TREND = [
-    { hour: "06:00", output: 850 },
-    { hour: "07:00", output: 1120 },
-    { hour: "08:00", output: 1280 },
-    { hour: "09:00", output: 1350 },
-    { hour: "10:00", output: 1190 },
-    { hour: "11:00", output: 1050 },
-    { hour: "12:00", output: 980 },
-    { hour: "13:00", output: 1420 },
-    { hour: "14:00", output: 1250 },
-    { hour: "15:00", output: 0 },
-    { hour: "16:00", output: 0 },
-    { hour: "17:00", output: 0 },
-    { hour: "18:00", output: 0 },
-    { hour: "19:00", output: 0 },
-    { hour: "20:00", output: 0 },
-    { hour: "21:00", output: 0 },
-    { hour: "22:00", output: 0 }
-];
-
-const MOCK_DOWNTIME = [
-    { category: "Trouble Machine", minutes: 35, count: 1 },
-    { category: "Trouble Tooling", minutes: 50, count: 1 },
-    { category: "Dandori (setting dan adjustment)", minutes: 25, count: 1 },
-    { category: "QC Check (inspection part)", minutes: 15, count: 1 }
-];
+const EFFECTIVE_SHIFT_MINUTES = 480;
 
 const STATUS_LABELS = {
     running: "Running",
     downtime: "Downtime",
-    stop: "Stop",
-    unconfirmed: "Belum dikonfirmasi",
-    needs_confirmation: "Perlu konfirmasi"
+    off_schedule: "Di luar jadwal",
+    unconfirmed: "Belum dikonfirmasi"
 };
 
 const STATUS_COLORS = {
     running: "#16a34a",
     downtime: "#dc2626",
-    stop: "#64748b",
-    unconfirmed: "#d97706",
-    needs_confirmation: "#9333ea"
+    off_schedule: "#64748b",
+    unconfirmed: "#d97706"
 };
 
-const formatNumber = value =>
-    value === null || value === undefined
-        ? "-"
-        : new Intl.NumberFormat("id-ID").format(value);
-
-const formatDuration = minutes => {
-    const hours = Math.floor(minutes / 60);
-    const remaining = minutes % 60;
-    return hours ? `${hours} jam ${remaining} menit` : `${remaining} menit`;
+const safeReadArray = (key) => {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
 };
 
-const getToday = () => {
-    const date = new Date();
-    const offset = date.getTimezoneOffset();
-    return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10);
+const getTodayKey = () => {
+    const now = new Date();
+    const offset = now.getTimezoneOffset() * 60000;
+    return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+};
+
+const formatNumber = (value) => {
+    if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) {
+        return "Belum ada data";
+    }
+    return Number(value).toLocaleString("id-ID");
+};
+
+const formatPercent = (value) => {
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+        return "Belum ada data";
+    }
+    return `${Number(value).toLocaleString("id-ID", {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1
+    })}%`;
+};
+
+const formatDuration = (minutes) => {
+    if (minutes === null || minutes === undefined || !Number.isFinite(Number(minutes))) {
+        return "Belum ada data";
+    }
+    const safe = Math.max(0, Math.round(Number(minutes)));
+    const hours = Math.floor(safe / 60);
+    const remaining = safe % 60;
+    if (!hours) return `${remaining} menit`;
+    if (!remaining) return `${hours} jam`;
+    return `${hours} jam ${remaining} menit`;
+};
+
+const normalizeShiftKey = (shiftValue) => {
+    const raw = String(shiftValue ?? "").trim().toLowerCase();
+    if (raw === "1" || raw === "shift 1" || raw === "shift1") return "shift1";
+    if (raw === "2" || raw === "shift 2" || raw === "shift2") return "shift2";
+    return null;
+};
+
+const getStartText = (event) => event?.startAt || event?.start || "";
+const getEndText = (event) => event?.endAt || event?.end || null;
+
+const isRunningCategory = (category) => {
+    if (category === 1 || String(category) === "1") return true;
+    const raw = String(category ?? "").trim().toLowerCase();
+    return raw === "running production";
+};
+
+const getDowntimeMinutes = (event, now = new Date()) => {
+    const startText = getStartText(event);
+    if (!startText) return 0;
+    const start = new Date(startText);
+    const endText = getEndText(event);
+    const end = endText ? new Date(endText) : now;
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return 0;
+    if (end <= start) return 0;
+    return Math.round((end.getTime() - start.getTime()) / 60000);
+};
+
+// Aturan: downtime pada jam handover Shift 1 ke Shift 2 (14:00 - 14:15) masuk ke Shift 1
+const resolveShiftKeyByTime = (dateValue) => {
+    if (!dateValue) return null;
+    const d = new Date(dateValue);
+    if (!Number.isFinite(d.getTime())) return null;
+    const minutes = d.getHours() * 60 + d.getMinutes();
+
+    if (minutes >= 6 * 60 && minutes <= 14 * 60 + 15) {
+        return "shift1";
+    }
+    if (minutes > 14 * 60 + 15 && minutes < 23 * 60) {
+        return "shift2";
+    }
+    return null;
+};
+
+const isWithinShiftSchedule = (date = new Date()) => {
+    const minutes = date.getHours() * 60 + date.getMinutes();
+    const inShift1 = minutes >= 6 * 60 && minutes < 15 * 60;
+    const inShift2 = minutes >= 14 * 60 && minutes < 23 * 60;
+    return inShift1 || inShift2;
 };
 
 export default function Dashboard() {
-    const [selectedDate, setSelectedDate] = useState(getToday());
+    const [selectedDate, setSelectedDate] = useState(getTodayKey);
     const [selectedShift, setSelectedShift] = useState("all");
     const [selectedMachine, setSelectedMachine] = useState("all");
     const [selectedPart, setSelectedPart] = useState("all");
     const [activeMachine, setActiveMachine] = useState(null);
+    const [activeHour, setActiveHour] = useState(null);
+    const [storageTick, setStorageTick] = useState(0);
+
+    useEffect(() => {
+        const handleSync = () => setStorageTick((prev) => prev + 1);
+        window.addEventListener("storage", handleSync);
+        window.addEventListener("yahata-storage-updated", handleSync);
+        return () => {
+            window.removeEventListener("storage", handleSync);
+            window.removeEventListener("yahata-storage-updated", handleSync);
+        };
+    }, []);
+
+    const productionRecords = useMemo(
+        () => safeReadArray(PRODUCTION_STORAGE_KEY),
+        [storageTick]
+    );
+    const downtimeEvents = useMemo(
+        () => safeReadArray(DOWNTIME_STORAGE_KEY),
+        [storageTick]
+    );
+    const masterRecords = useMemo(
+        () => safeReadArray(MASTER_STORAGE_KEY),
+        [storageTick]
+    );
+    const shiftPicRecords = useMemo(
+        () => safeReadArray(SHIFT_PIC_STORAGE_KEY),
+        [storageTick]
+    );
+
+    const partOptions = useMemo(() => {
+        const fromMaster = masterRecords.map((m) => m.partNumber).filter(Boolean);
+        const fromProd = productionRecords.map((r) => r.partNumber).filter(Boolean);
+        return [...new Set([...fromMaster, ...fromProd])].sort();
+    }, [masterRecords, productionRecords]);
+
+    const filteredDowntime = useMemo(() => {
+        return downtimeEvents.filter((event) => {
+            if (isRunningCategory(event.category)) return false;
+
+            const startText = getStartText(event);
+            if (!startText) return false;
+            const eventDate = startText.slice(0, 10);
+            const dateMatch = !selectedDate || eventDate === selectedDate;
+
+            const machineName = event.machine || event.machineId || "";
+            const machineMatch = selectedMachine === "all" || machineName === selectedMachine;
+
+            const eventShift =
+                resolveShiftKeyByTime(startText) || normalizeShiftKey(event.shift);
+            const shiftMatch = selectedShift === "all" || eventShift === selectedShift;
+
+            return dateMatch && machineMatch && shiftMatch;
+        });
+    }, [downtimeEvents, selectedDate, selectedMachine, selectedShift]);
+
+    const filteredProduction = useMemo(() => {
+        return productionRecords.filter((rec) => {
+            const dateMatch = !selectedDate || rec.date === selectedDate;
+            const machineMatch = selectedMachine === "all" || rec.machine === selectedMachine;
+            const recShift =
+                normalizeShiftKey(rec.shift) ||
+                (rec.startTime ? resolveShiftKeyByTime(`${rec.date}T${rec.startTime}`) : null);
+            const shiftMatch = selectedShift === "all" || recShift === selectedShift;
+            const partMatch = selectedPart === "all" || rec.partNumber === selectedPart;
+
+            return dateMatch && machineMatch && shiftMatch && partMatch;
+        });
+    }, [productionRecords, selectedDate, selectedMachine, selectedShift, selectedPart]);
 
     const machines = useMemo(() => {
-        return MOCK_MACHINES.filter(machine => {
-            const machineMatch =
-                selectedMachine === "all" || machine.name === selectedMachine;
-            const partMatch =
-                selectedPart === "all" || machine.partNumber === selectedPart;
+        const now = new Date();
+        const isToday = selectedDate === getTodayKey();
+        const inSchedule = isToday ? isWithinShiftSchedule(now) : false;
 
-            return machineMatch && partMatch;
+        return MACHINES.filter((name) => {
+            if (selectedMachine !== "all" && name !== selectedMachine) return false;
+
+            const master = masterRecords.find((m) => m.machine === name);
+            const machineProd = filteredProduction.filter((r) => r.machine === name);
+            const latestPart =
+                machineProd[machineProd.length - 1]?.partNumber ||
+                master?.partNumber ||
+                "";
+
+            if (selectedPart !== "all") {
+                const hasMatchingPart =
+                    latestPart === selectedPart ||
+                    machineProd.some((r) => r.partNumber === selectedPart);
+                if (!hasMatchingPart) return false;
+            }
+
+            return true;
+        }).map((name) => {
+            const master = masterRecords.find((m) => m.machine === name);
+            const machineProd = filteredProduction.filter((r) => r.machine === name);
+            const machineDt = filteredDowntime.filter(
+                (ev) => (ev.machine || ev.machineId) === name
+            );
+
+            const hasProdData = machineProd.length > 0;
+            const actualOutput = hasProdData
+                ? machineProd.reduce((sum, r) => sum + Number(r.output || 0), 0)
+                : null;
+
+            const latestProd = hasProdData ? machineProd[machineProd.length - 1] : null;
+            const partNumber = latestProd?.partNumber || master?.partNumber || "Belum ada data";
+
+            const matchedPic = shiftPicRecords.find((sp) => {
+                const dateOk = !selectedDate || sp.date === selectedDate;
+                const machineOk = sp.machine === name;
+                const shiftOk = selectedShift === "all" || normalizeShiftKey(sp.shift) === selectedShift;
+                return dateOk && machineOk && shiftOk;
+            });
+
+            const pic = matchedPic?.pic || latestProd?.pic || "Belum ada data";
+            const rpm = master?.rpm ? Number(master.rpm) : null;
+
+            const totalDtMinutes = machineDt.reduce(
+                (sum, ev) => sum + getDowntimeMinutes(ev, now),
+                0
+            );
+
+            const activeDt = machineDt.find((ev) => !getEndText(ev));
+
+            const target =
+                hasProdData && rpm && rpm > 0
+                    ? rpm * EFFECTIVE_SHIFT_MINUTES
+                    : null;
+
+            const productivity =
+                actualOutput !== null && target && target > 0
+                    ? (actualOutput / target) * 100
+                    : null;
+
+            const efficiency =
+                hasProdData || machineDt.length > 0
+                    ? Math.max(
+                          0,
+                          ((EFFECTIVE_SHIFT_MINUTES - totalDtMinutes) / EFFECTIVE_SHIFT_MINUTES) * 100
+                      )
+                    : null;
+
+            let statusKey = "unconfirmed";
+            if (activeDt) {
+                statusKey = "downtime";
+            } else if (isToday && !inSchedule) {
+                statusKey = "off_schedule";
+            } else if (hasProdData) {
+                statusKey = "running";
+            }
+
+            return {
+                name,
+                statusKey,
+                hasProdData,
+                actualOutput,
+                target,
+                productivity,
+                efficiency,
+                partNumber,
+                pic,
+                rpm,
+                downtimeMinutes: machineDt.length > 0 ? totalDtMinutes : null,
+                downtimeCount: machineDt.length,
+                activeDowntimeCategory: activeDt?.category || null
+            };
         });
-    }, [selectedMachine, selectedPart]);
+    }, [
+        selectedDate,
+        selectedMachine,
+        selectedShift,
+        selectedPart,
+        masterRecords,
+        filteredProduction,
+        filteredDowntime,
+        shiftPicRecords
+    ]);
 
     const kpi = useMemo(() => {
-        const running = machines.filter(m => m.status === "running").length;
-        const downtime = machines.filter(m => m.status === "downtime").length;
-        const validData = machines.filter(m => m.actual !== null).length;
-        const totalOutput = machines.reduce(
-            (sum, machine) => sum + (machine.actual ?? 0),
-            0
-        );
+        const machinesWithOutput = machines.filter((m) => m.actualOutput !== null);
+        const totalActual =
+            machinesWithOutput.length > 0
+                ? machinesWithOutput.reduce((sum, m) => sum + m.actualOutput, 0)
+                : null;
+
+        const machinesWithTarget = machines.filter((m) => m.target !== null);
+        const totalTarget =
+            machinesWithTarget.length > 0
+                ? machinesWithTarget.reduce((sum, m) => sum + m.target, 0)
+                : null;
+
+        const productivity =
+            totalActual !== null && totalTarget && totalTarget > 0
+                ? (totalActual / totalTarget) * 100
+                : null;
+
+        const totalDt =
+            filteredDowntime.length > 0
+                ? filteredDowntime.reduce((sum, ev) => sum + getDowntimeMinutes(ev), 0)
+                : null;
+
+        const hasAnyActivity =
+            filteredProduction.length > 0 || filteredDowntime.length > 0;
+
+        const efficiency = hasAnyActivity
+            ? Math.max(
+                  0,
+                  ((EFFECTIVE_SHIFT_MINUTES - (totalDt || 0)) / EFFECTIVE_SHIFT_MINUTES) * 100
+              )
+            : null;
+
+        const runningCount = machines.filter((m) => m.statusKey === "running").length;
+        const downtimeCount = machines.filter((m) => m.statusKey === "downtime").length;
 
         return {
-            totalOutput,
             totalMachines: machines.length,
-            running,
-            downtime,
-            validData
+            runningCount,
+            downtimeCount,
+            totalActual,
+            totalTarget,
+            productivity,
+            efficiency,
+            totalDt
         };
-    }, [machines]);
+    }, [machines, filteredProduction, filteredDowntime]);
 
-    const trend = useMemo(() => {
-        if (selectedShift === "shift2") {
-            return MOCK_TREND.filter(item => {
-                const hour = Number(item.hour.slice(0, 2));
-                return hour >= 15;
+    const trendHours = useMemo(() => {
+        const hours = Array.from({ length: 17 }, (_, idx) => idx + 6); // 06:00 - 22:00
+        return hours
+            .filter((hour) => {
+                if (selectedShift === "shift1") return hour >= 6 && hour < 15;
+                if (selectedShift === "shift2") return hour >= 14 && hour < 23;
+                return true;
+            })
+            .map((hour) => {
+                const label = `${String(hour).padStart(2, "0")}:00`;
+                const matching = filteredProduction.filter((rec) => {
+                    if (!rec.startTime) return false;
+                    const recHour = Number(String(rec.startTime).slice(0, 2));
+                    return recHour === hour;
+                });
+
+                const hasData = matching.length > 0;
+                const output = hasData
+                    ? matching.reduce((sum, r) => sum + Number(r.output || 0), 0)
+                    : null;
+
+                const byMachineMap = new Map();
+                matching.forEach((rec) => {
+                    const mName = rec.machine || "-";
+                    byMachineMap.set(mName, (byMachineMap.get(mName) || 0) + Number(rec.output || 0));
+                });
+
+                const breakdown = [...byMachineMap.entries()].map(([mName, mOutput]) => ({
+                    machine: mName,
+                    output: mOutput
+                }));
+
+                return {
+                    hour: label,
+                    hasData,
+                    output,
+                    recordCount: matching.length,
+                    breakdown
+                };
             });
-        }
+    }, [filteredProduction, selectedShift]);
 
-        if (selectedShift === "shift1") {
-            return MOCK_TREND.filter(item => {
-                const hour = Number(item.hour.slice(0, 2));
-                return hour >= 6 && hour < 15;
-            });
-        }
+    const downtimeByCategory = useMemo(() => {
+        const base = DOWNTIME_CATEGORIES.filter((c) => c.code !== 1).map((c) => ({
+            code: c.code,
+            name: c.name,
+            count: 0,
+            minutes: 0
+        }));
 
-        return MOCK_TREND.filter(item => {
-            const hour = Number(item.hour.slice(0, 2));
-            return hour >= 6;
+        filteredDowntime.forEach((ev) => {
+            const catText = String(ev.category ?? "").trim().toLowerCase();
+            const found = base.find(
+                (item) =>
+                    item.name.toLowerCase() === catText ||
+                    String(item.code) === String(ev.category)
+            );
+            const mins = getDowntimeMinutes(ev);
+
+            if (found) {
+                found.count += 1;
+                found.minutes += mins;
+            } else if (ev.category) {
+                base.push({
+                    code: `custom-${ev.category}`,
+                    name: String(ev.category),
+                    count: 1,
+                    minutes: mins
+                });
+            }
         });
-    }, [selectedShift]);
 
-    const totalDowntime = MOCK_DOWNTIME.reduce(
-        (sum, item) => sum + item.minutes,
-        0
+        return base.filter((item) => item.count > 0).sort((a, b) => b.minutes - a.minutes);
+    }, [filteredDowntime]);
+
+    const maxTrendValue = Math.max(
+        ...trendHours.map((item) => (item.output !== null ? item.output : 0)),
+        1
     );
 
-    const maxOutput = Math.max(...trend.map(item => item.output), 1);
-
-    const selectedMachineData = MOCK_MACHINES.find(
-        machine => machine.name === activeMachine
-    );
+    const selectedMachineData = machines.find((m) => m.name === activeMachine) || null;
+    const selectedHourData = trendHours.find((item) => item.hour === activeHour) || null;
 
     return (
         <main className="dashboard">
@@ -154,16 +441,16 @@ export default function Dashboard() {
                     <div>
                         <span className="header-eyebrow">YAHATA FASTENER INDONESIA</span>
                         <h1>Production Monitoring</h1>
-                        <p>Forming Area · Production Dashboard</p>
+                        <p>Forming Area · Production Dashboard (14 Mesin)</p>
                     </div>
                 </div>
 
                 <div className="header-info">
                     <div>
                         <span className="connection-dot"></span>
-                        <span>Demo Mode</span>
+                        <span>LocalStorage Mode</span>
                     </div>
-                    <small>Mock data · Belum terhubung API</small>
+                    <small>Data otomatis dari halaman operasional</small>
                 </div>
             </header>
 
@@ -174,7 +461,7 @@ export default function Dashboard() {
                         id="filter-date"
                         type="date"
                         value={selectedDate}
-                        onChange={e => setSelectedDate(e.target.value)}
+                        onChange={(e) => setSelectedDate(e.target.value)}
                     />
                 </div>
 
@@ -183,12 +470,12 @@ export default function Dashboard() {
                     <select
                         id="filter-shift"
                         value={selectedShift}
-                        onChange={e => setSelectedShift(e.target.value)}
+                        onChange={(e) => setSelectedShift(e.target.value)}
                     >
                         <option value="all">Semua Shift</option>
-                        {SHIFTS.map(shift => (
+                        {SHIFTS.map((shift) => (
                             <option key={shift.key} value={shift.key}>
-                                {shift.name}
+                                {shift.name} ({shift.schedule})
                             </option>
                         ))}
                     </select>
@@ -199,10 +486,10 @@ export default function Dashboard() {
                     <select
                         id="filter-machine"
                         value={selectedMachine}
-                        onChange={e => setSelectedMachine(e.target.value)}
+                        onChange={(e) => setSelectedMachine(e.target.value)}
                     >
-                        <option value="all">Semua Mesin</option>
-                        {MACHINES.map(machine => (
+                        <option value="all">Semua Mesin (14)</option>
+                        {MACHINES.map((machine) => (
                             <option key={machine} value={machine}>
                                 {machine}
                             </option>
@@ -215,24 +502,26 @@ export default function Dashboard() {
                     <select
                         id="filter-part"
                         value={selectedPart}
-                        onChange={e => setSelectedPart(e.target.value)}
+                        onChange={(e) => setSelectedPart(e.target.value)}
                     >
                         <option value="all">Semua Part Number</option>
-                        {[...new Set(MOCK_MACHINES.map(m => m.partNumber))]
-                            .filter(part => part !== "-")
-                            .map(part => (
-                                <option key={part} value={part}>{part}</option>
-                            ))}
+                        {partOptions.map((part) => (
+                            <option key={part} value={part}>
+                                {part}
+                            </option>
+                        ))}
                     </select>
                 </div>
 
                 <button
+                    type="button"
                     className="filter-reset"
                     onClick={() => {
-                        setSelectedDate(getToday());
+                        setSelectedDate(getTodayKey());
                         setSelectedShift("all");
                         setSelectedMachine("all");
                         setSelectedPart("all");
+                        setActiveHour(null);
                     }}
                 >
                     Reset Filter
@@ -241,33 +530,37 @@ export default function Dashboard() {
 
             <section className="kpi-container">
                 <article className="kpi-card">
-                    <span className="kpi-label">Total Actual Output</span>
-                    <strong>{formatNumber(kpi.totalOutput)}</strong>
-                    <small>Pieces · berdasarkan data tersedia</small>
-                </article>
-
-                <article className="kpi-card">
-                    <span className="kpi-label">Total Machines</span>
+                    <span className="kpi-label">Total Mesin</span>
                     <strong>{kpi.totalMachines}</strong>
-                    <small>Mesin sesuai filter</small>
+                    <small>
+                        Running: {kpi.runningCount} · Downtime: {kpi.downtimeCount}
+                    </small>
                 </article>
 
                 <article className="kpi-card">
-                    <span className="kpi-label">Running</span>
-                    <strong className="kpi-green">{kpi.running}</strong>
-                    <small>Mesin berstatus running</small>
+                    <span className="kpi-label">Total Produksi</span>
+                    <strong>{formatNumber(kpi.totalActual)}</strong>
+                    <small>Pieces · berdasarkan input tercatat</small>
                 </article>
 
                 <article className="kpi-card">
-                    <span className="kpi-label">Downtime</span>
-                    <strong className="kpi-red">{kpi.downtime}</strong>
-                    <small>Mesin mengalami downtime</small>
+                    <span className="kpi-label">Target Produksi</span>
+                    <strong>{formatNumber(kpi.totalTarget)}</strong>
+                    <small>Estimasi berbasis RPM & 480 menit efektif</small>
                 </article>
 
                 <article className="kpi-card">
-                    <span className="kpi-label">Valid Production Data</span>
-                    <strong>{kpi.validData}</strong>
-                    <small>Mesin dengan input produksi</small>
+                    <span className="kpi-label">Productivity</span>
+                    <strong>{formatPercent(kpi.productivity)}</strong>
+                    <small>Actual ÷ Target</small>
+                </article>
+
+                <article className="kpi-card">
+                    <span className="kpi-label">Efficiency</span>
+                    <strong>{formatPercent(kpi.efficiency)}</strong>
+                    <small>
+                        Efektif 480 mnt · DT: {formatDuration(kpi.totalDt)}
+                    </small>
                 </article>
             </section>
 
@@ -275,36 +568,73 @@ export default function Dashboard() {
                 <article className="panel production-panel">
                     <div className="panel-header">
                         <div>
-                            <h2>Production Trend</h2>
-                            <p>Total output per jam dari mesin sesuai filter</p>
+                            <h2>Tren Produksi per Jam</h2>
+                            <p>Klik kolom jam untuk melihat rincian per mesin</p>
                         </div>
                         <span className="panel-unit">PCS / HOUR</span>
                     </div>
 
                     <div className="trend-chart">
-                        {trend.map(item => (
-                            <div className="trend-column" key={item.hour}>
-                                <span className="trend-value">
-                                    {item.output ? formatNumber(item.output) : "-"}
-                                </span>
-                                <div className="trend-bar-area">
-                                    <div
-                                        className="trend-bar"
-                                        style={{
-                                            height: `${item.output / maxOutput * 100}%`,
-                                            minHeight: item.output ? "4px" : "0"
-                                        }}
-                                    />
+                        {trendHours.map((item) => {
+                            const heightPercent =
+                                item.hasData && item.output !== null
+                                    ? (item.output / maxTrendValue) * 100
+                                    : 0;
+
+                            const hoverDetail = item.hasData
+                                ? `${item.hour} · Total: ${formatNumber(item.output)} pcs (${item.breakdown
+                                      .map((b) => `${b.machine}: ${formatNumber(b.output)}`)
+                                      .join(", ")})`
+                                : `${item.hour} · Belum ada data`;
+
+                            return (
+                                <div
+                                    className={`trend-column ${activeHour === item.hour ? "selected" : ""}`}
+                                    key={item.hour}
+                                    title={hoverDetail}
+                                    onClick={() =>
+                                        setActiveHour(activeHour === item.hour ? null : item.hour)
+                                    }
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter" || e.key === " ") {
+                                            setActiveHour(activeHour === item.hour ? null : item.hour);
+                                        }
+                                    }}
+                                >
+                                    <span className="trend-value">
+                                        {item.hasData ? formatNumber(item.output) : "-"}
+                                    </span>
+                                    <div className="trend-bar-area">
+                                        <div
+                                            className="trend-bar"
+                                            style={{
+                                                height: `${heightPercent}%`,
+                                                minHeight: item.hasData && item.output > 0 ? "4px" : "0"
+                                            }}
+                                        />
+                                    </div>
+                                    <span className="trend-hour">{item.hour}</span>
                                 </div>
-                                <span className="trend-hour">{item.hour}</span>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
+                    {selectedHourData && (
+                        <div className="helper-text">
+                            <strong>Detail Jam {selectedHourData.hour}:</strong>{" "}
+                            {selectedHourData.hasData
+                                ? `${formatNumber(selectedHourData.output)} pcs (${selectedHourData.recordCount} input) — ${selectedHourData.breakdown
+                                      .map((b) => `${b.machine}: ${formatNumber(b.output)} pcs`)
+                                      .join(" · ")}`
+                                : "Belum ada data produksi pada jam ini."}
+                        </div>
+                    )}
+
                     <p className="helper-text">
-                        Data grafik ini merupakan contoh tampilan. Jam tanpa data
-                        produksi harus ditampilkan sebagai belum ada data, bukan
-                        dianggap hasil produksi nol.
+                        Jam yang belum memiliki data pencatatan ditampilkan sebagai
+                        belum ada data (bukan dianggap hasil produksi nol).
                     </p>
                 </article>
 
@@ -312,81 +642,83 @@ export default function Dashboard() {
                     <div className="panel-header">
                         <div>
                             <h2>Downtime Overview</h2>
-                            <p>Ringkasan kategori downtime</p>
+                            <p>Kategori 2–13 (handover 14:00–14:15 masuk Shift 1)</p>
                         </div>
                     </div>
 
                     <div className="downtime-total">
                         <span>Total Downtime</span>
-                        <strong>{formatDuration(totalDowntime)}</strong>
-                        <small>
-                            {MOCK_DOWNTIME.reduce((sum, item) => sum + item.count, 0)} kejadian
-                        </small>
+                        <strong>{formatDuration(kpi.totalDt)}</strong>
+                        <small>{filteredDowntime.length} kejadian tercatat</small>
                     </div>
 
-                    <div className="downtime-list">
-                        {MOCK_DOWNTIME.map(item => (
-                            <div className="downtime-item" key={item.category}>
-                                <div>
-                                    <strong>{item.category}</strong>
-                                    <small>{item.count} kejadian</small>
+                    {downtimeByCategory.length === 0 ? (
+                        <div className="empty-state">Belum ada data downtime</div>
+                    ) : (
+                        <div className="downtime-list">
+                            {downtimeByCategory.map((item) => (
+                                <div className="downtime-item" key={item.name}>
+                                    <div>
+                                        <strong>{item.name}</strong>
+                                        <small>{item.count} kejadian</small>
+                                    </div>
+                                    <span>{formatDuration(item.minutes)}</span>
                                 </div>
-                                <span>{formatDuration(item.minutes)}</span>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    )}
                 </article>
             </section>
 
             <section className="panel machine-monitoring">
                 <div className="panel-header">
                     <div>
-                        <h2>Machine Monitoring</h2>
-                        <p>Monitoring status seluruh mesin area Forming</p>
+                        <h2>Performa & Status Mesin Forming</h2>
+                        <p>Klik kartu mesin untuk melihat detail performa mesin</p>
                     </div>
-                    <span className="machine-count">
-                        {machines.length} Mesin
-                    </span>
+                    <span className="machine-count">{machines.length} Mesin</span>
                 </div>
 
                 <div className="machine-legend">
-                    {Object.entries(STATUS_LABELS).map(([status, label]) => (
-                        <span key={status}>
-                            <i style={{ background: STATUS_COLORS[status] }}></i>
+                    {Object.entries(STATUS_LABELS).map(([key, label]) => (
+                        <span key={key}>
+                            <i style={{ background: STATUS_COLORS[key] }}></i>
                             {label}
                         </span>
                     ))}
                 </div>
 
                 <div className="machine-grid">
-                    {machines.map(machine => (
+                    {machines.map((machine) => (
                         <button
                             type="button"
                             className={`machine-card ${activeMachine === machine.name ? "selected" : ""}`}
                             key={machine.name}
-                            onClick={() => setActiveMachine(
-                                activeMachine === machine.name ? null : machine.name
-                            )}
+                            onClick={() =>
+                                setActiveMachine(
+                                    activeMachine === machine.name ? null : machine.name
+                                )
+                            }
                         >
                             <div className="machine-card-top">
                                 <strong>{machine.name}</strong>
                                 <span
                                     className="status-indicator"
-                                    style={{ background: STATUS_COLORS[machine.status] }}
+                                    style={{ background: STATUS_COLORS[machine.statusKey] }}
                                 ></span>
                             </div>
 
                             <span className="machine-status-text">
-                                {STATUS_LABELS[machine.status]}
+                                {STATUS_LABELS[machine.statusKey]}
                             </span>
 
                             <div className="machine-output">
                                 <strong>
-                                    {machine.actual === null
-                                        ? "-"
-                                        : formatNumber(machine.actual)}
+                                    {machine.actualOutput === null
+                                        ? "Belum ada data"
+                                        : formatNumber(machine.actualOutput)}
                                 </strong>
-                                <small>PCS</small>
+                                {machine.actualOutput !== null && <small>PCS</small>}
                             </div>
 
                             <div className="machine-card-bottom">
@@ -408,10 +740,11 @@ export default function Dashboard() {
                 <section className="detail-panel">
                     <div className="panel-header">
                         <div>
-                            <h2>Machine Detail · {selectedMachineData.name}</h2>
-                            <p>Informasi detail mesin</p>
+                            <h2>Detail Performa · {selectedMachineData.name}</h2>
+                            <p>Ringkasan data mesin pada filter terpilih</p>
                         </div>
                         <button
+                            type="button"
                             className="detail-close"
                             onClick={() => setActiveMachine(null)}
                         >
@@ -422,55 +755,57 @@ export default function Dashboard() {
                     <div className="detail-grid">
                         <div>
                             <span>Status Mesin</span>
-                            <strong style={{
-                                color: STATUS_COLORS[selectedMachineData.status]
-                            }}>
-                                {STATUS_LABELS[selectedMachineData.status]}
+                            <strong style={{ color: STATUS_COLORS[selectedMachineData.statusKey] }}>
+                                {STATUS_LABELS[selectedMachineData.statusKey]}
                             </strong>
                         </div>
                         <div>
-                            <span>Actual Output</span>
+                            <span>Total Produksi</span>
                             <strong>
-                                {selectedMachineData.actual === null
+                                {selectedMachineData.actualOutput === null
                                     ? "Belum ada data"
-                                    : `${formatNumber(selectedMachineData.actual)} pcs`}
+                                    : `${formatNumber(selectedMachineData.actualOutput)} pcs`}
                             </strong>
+                        </div>
+                        <div>
+                            <span>Target Produksi</span>
+                            <strong>
+                                {selectedMachineData.target === null
+                                    ? "Belum ada data"
+                                    : `${formatNumber(selectedMachineData.target)} pcs`}
+                            </strong>
+                        </div>
+                        <div>
+                            <span>Productivity</span>
+                            <strong>{formatPercent(selectedMachineData.productivity)}</strong>
+                        </div>
+                        <div>
+                            <span>Efficiency</span>
+                            <strong>{formatPercent(selectedMachineData.efficiency)}</strong>
+                        </div>
+                        <div>
+                            <span>Downtime</span>
+                            <strong>{formatDuration(selectedMachineData.downtimeMinutes)}</strong>
                         </div>
                         <div>
                             <span>Part Number</span>
                             <strong>{selectedMachineData.partNumber}</strong>
                         </div>
                         <div>
-                            <span>Operator / PIC</span>
+                            <span>PIC</span>
                             <strong>{selectedMachineData.pic}</strong>
                         </div>
                         <div>
                             <span>RPM</span>
                             <strong>
-                                {selectedMachineData.rpm ?? "Belum tersedia"}
-                            </strong>
-                        </div>
-                        <div>
-                            <span>Downtime</span>
-                            <strong>
-                                {selectedMachineData.downtime
-                                    ? `${selectedMachineData.downtime} · ${selectedMachineData.duration} menit`
-                                    : "-"}
+                                {selectedMachineData.rpm !== null
+                                    ? `${formatNumber(selectedMachineData.rpm)} RPM`
+                                    : "Belum ada data"}
                             </strong>
                         </div>
                     </div>
-
-                    <p className="helper-text">
-                        Informasi ini masih berupa data simulasi dan akan
-                        disesuaikan setelah integrasi dengan backend.
-                    </p>
                 </section>
             )}
-
-            <footer className="dashboard-footer">
-                <span>Yahata Production Monitoring System</span>
-                <span>Frontend Preview · Mock Data</span>
-            </footer>
         </main>
     );
 }
