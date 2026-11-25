@@ -131,44 +131,54 @@ export default function Dashboard() {
     const [selectedPart, setSelectedPart] = useState("all");
     const [activeMachine, setActiveMachine] = useState(null);
     const [activeHour, setActiveHour] = useState(null);
-    const [productionRecords, setProductionRecords] = useState([]);
-    const [downtimeEvents, setDowntimeEvents] = useState([]);
-    const [masterRecords, setMasterRecords] = useState([]);
-    const [shiftPicRecords, setShiftPicRecords] = useState([]);
+    const [productionRecords, setProductionRecords] = useState(() => safeReadArray(PRODUCTION_STORAGE_KEY));
+    const [downtimeEvents, setDowntimeEvents] = useState(() => safeReadArray(DOWNTIME_STORAGE_KEY));
+    const [masterRecords, setMasterRecords] = useState(() => safeReadArray(MASTER_STORAGE_KEY));
+    const [shiftPicRecords, setShiftPicRecords] = useState(() => safeReadArray(SHIFT_PIC_STORAGE_KEY));
     const [loading, setLoading] = useState(false);
     const [loadError, setLoadError] = useState("");
+    const [refreshKey, setRefreshKey] = useState(0);
 
     useEffect(() => {
         let active = true;
         const load = async () => {
             setLoading(true);
             setLoadError("");
-            try {
-                const params = selectedDate ? { date: selectedDate } : {};
-                const [prod, dt, masters, pics] = await Promise.all([
-                    fetchProductionRecords(params),
-                    fetchDowntimeEvents(params),
-                    fetchMasters(),
-                    fetchShiftAssignments(params),
-                ]);
-                if (!active) return;
-                setProductionRecords(Array.isArray(prod) ? prod : []);
-                setDowntimeEvents(Array.isArray(dt) ? dt : []);
-                setMasterRecords(Array.isArray(masters) ? masters : []);
-                setShiftPicRecords(Array.isArray(pics) ? pics : []);
-                try {
-                    localStorage.setItem(PRODUCTION_STORAGE_KEY, JSON.stringify(Array.isArray(prod) ? prod : []));
-                    localStorage.setItem(DOWNTIME_STORAGE_KEY, JSON.stringify(Array.isArray(dt) ? dt : []));
-                    localStorage.setItem(MASTER_STORAGE_KEY, JSON.stringify(Array.isArray(masters) ? masters : []));
-                    localStorage.setItem(SHIFT_PIC_STORAGE_KEY, JSON.stringify(Array.isArray(pics) ? pics : []));
-                } catch {}
-            } catch (err) {
-                if (!active) return;
-                setLoadError(err?.message || "Gagal memuat data dashboard dari backend.");
-            } finally {
-                if (active) setLoading(false);
+            const params = selectedDate ? { date: selectedDate } : {};
+            const [prodResult, dtResult, masterResult, picResult] = await Promise.allSettled([
+                fetchProductionRecords(params),
+                fetchDowntimeEvents(params),
+                fetchMasters(),
+                fetchShiftAssignments(params),
+            ]);
+            if (!active) return;
+
+            const failed = [];
+            const applyResult = (result, label, setter, storageKey) => {
+                if (result.status === "fulfilled") {
+                    const value = Array.isArray(result.value) ? result.value : [];
+                    setter(value);
+                    try { localStorage.setItem(storageKey, JSON.stringify(value)); } catch {}
+                } else {
+                    failed.push(label);
+                }
+            };
+
+            applyResult(prodResult, "produksi", setProductionRecords, PRODUCTION_STORAGE_KEY);
+            applyResult(dtResult, "downtime", setDowntimeEvents, DOWNTIME_STORAGE_KEY);
+            applyResult(masterResult, "master", setMasterRecords, MASTER_STORAGE_KEY);
+            applyResult(picResult, "shift/PIC", setShiftPicRecords, SHIFT_PIC_STORAGE_KEY);
+
+            if (failed.length > 0) {
+                const detail = failed.length === 4
+                    ? "Gagal memuat data dashboard dari backend."
+                    : `Sebagian data gagal dimuat (${failed.join(", ")}). Menampilkan data terakhir yang tersedia.`;
+                setLoadError(detail);
             }
+
+            if (active) setLoading(false);
         };
+
         load();
         const handleSync = () => load();
         window.addEventListener("storage", handleSync);
@@ -178,7 +188,7 @@ export default function Dashboard() {
             window.removeEventListener("storage", handleSync);
             window.removeEventListener("yahata-storage-updated", handleSync);
         };
-    }, [selectedDate]);
+    }, [selectedDate, refreshKey]);
 
     const partOptions = useMemo(() => {
         const fromMaster = masterRecords.map((m) => m.partNumber).filter(Boolean);
@@ -473,10 +483,21 @@ export default function Dashboard() {
 
                 <div className="header-info">
                     <div>
-                        <span className="connection-dot"></span>
-                        <span>Live Backend</span>
+                        <span
+                            className="connection-dot"
+                            style={{
+                                background: loadError ? "#dc2626" : loading ? "#d97706" : "#16a34a",
+                            }}
+                        ></span>
+                        <span>{loading ? "Memuat data..." : loadError ? "Gagal sinkron" : "Live Backend"}</span>
                     </div>
-                    <small>Data otomatis dari halaman operasional</small>
+                    <small>
+                        {loading
+                            ? "Sedang mengambil data terbaru dari backend"
+                            : loadError
+                                ? "Periksa koneksi backend, lalu coba muat ulang"
+                                : "Data otomatis dari halaman operasional"}
+                    </small>
                 </div>
             </header>
 
@@ -553,6 +574,47 @@ export default function Dashboard() {
                     Reset Filter
                 </button>
             </section>
+
+            {(loading || loadError) && (
+                <div
+                    className="dashboard-status-note"
+                    role="status"
+                    aria-live="polite"
+                    style={{
+                        margin: "0 0 12px",
+                        padding: "10px 14px",
+                        borderRadius: "10px",
+                        border: `1px solid ${loadError ? "#fecaca" : "#fde68a"}`,
+                        background: loadError ? "#fef2f2" : "#fffbeb",
+                        color: loadError ? "#991b1b" : "#92400e",
+                        fontSize: "12px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "12px",
+                    }}
+                >
+                    <span>{loadError || "Memuat data dashboard..."}</span>
+                    {loadError && !loading && (
+                        <button
+                            type="button"
+                            onClick={() => setRefreshKey((k) => k + 1)}
+                            style={{
+                                border: "1px solid #dc2626",
+                                background: "#fff",
+                                color: "#991b1b",
+                                borderRadius: "8px",
+                                padding: "6px 10px",
+                                fontSize: "12px",
+                                cursor: "pointer",
+                                whiteSpace: "nowrap",
+                            }}
+                        >
+                            Coba muat ulang
+                        </button>
+                    )}
+                </div>
+            )}
 
             <section className="kpi-container">
                 <article className="kpi-card">

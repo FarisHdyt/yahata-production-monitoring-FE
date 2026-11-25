@@ -243,9 +243,9 @@ export default function ShiftPic() {
     <div className="rp-page">
       {notice && (
         <div key={notice.id} className={`rp-toast ${notice.type}`} role="alert" aria-live="assertive">
-          <span className="rp-toast-icon">{notice.type === "success" ? "âœ“" : "!"}</span>
+          <span className="rp-toast-icon">{notice.type === "success" ? "✓" : "!"}</span>
           <span className="rp-toast-message">{notice.message}</span>
-          <button type="button" className="rp-toast-close" onClick={() => setNotice(null)} aria-label="Tutup notifikasi">Ã—</button>
+          <button type="button" className="rp-toast-close" onClick={() => setNotice(null)} aria-label="Tutup notifikasi">×</button>
         </div>
       )}
 
@@ -256,7 +256,7 @@ export default function ShiftPic() {
           <p>Pengaturan operator (Man Power) per mesin pada tanggal dan shift area Forming.</p>
         </div>
         <button type="button" className="rp-refresh-btn" onClick={handleAutoPopulateShift} disabled={loading || saving}>
-          âš¡ Auto-Isi Semua Mesin ({shift})
+          ⚡ Auto-Isi Semua Mesin ({shift})
         </button>
       </div>
 
@@ -271,7 +271,7 @@ export default function ShiftPic() {
           <label>
             Shift
             <select value={shift} onChange={(e) => setShift(e.target.value)}>
-              {SHIFTS.map((s) => (<option key={s.id} value={s.name}>{s.name} ({s.start}â€“{s.end})</option>))}
+              {SHIFTS.map((s) => (<option key={s.id} value={s.name}>{s.name} ({s.start}–{s.end})</option>))}
             </select>
           </label>
           <label>
@@ -297,7 +297,7 @@ export default function ShiftPic() {
       <section className="rp-panel">
         <div className="rp-panel-heading">
           <div>
-            <h2>Rekap Manpower ({date} Â· {shift})</h2>
+            <h2>Rekap Manpower ({date} · {shift})</h2>
             <p>Daftar mesin yang dipegang dan output shift per operator.</p>
           </div>
         </div>
@@ -317,7 +317,7 @@ export default function ShiftPic() {
       <section className="rp-panel">
         <div className="rp-panel-heading">
           <div>
-            <h2>Daftar Penugasan 14 Mesin ({date} Â· {shift})</h2>
+            <h2>Daftar Penugasan 14 Mesin ({date} · {shift})</h2>
             <p>Penanda warna merah menandakan mesin running 1 shift sesuai jadwal.</p>
           </div>
         </div>
@@ -340,11 +340,11 @@ export default function ShiftPic() {
                   <td><strong>{row.pic}</strong></td>
                   <td>{formatNumber(row.prodOutput)} pcs</td>
                   <td>{row.isSaved ? "Tersimpan" : "Default Excel"}</td>
-                  <td>{row.notes || (row.oneShiftRule ? "Running 1 shift (jadwal)" : "â€”")}</td>
+                  <td>{row.notes || (row.oneShiftRule ? "Running 1 shift (jadwal)" : "—")}</td>
                   <td>
                     {row.isSaved ? (
                       <button type="button" onClick={() => handleDeleteRecord(row)} disabled={saving}>Hapus</button>
-                    ) : "â€”"}
+                    ) : "—"}
                   </td>
                 </tr>
               ))}

@@ -331,7 +331,7 @@ export default function Production() {
       {feedback && (
         <div key={feedback.id} className={`prod-toast ${feedback.type}`} role="alert">
           <div className="prod-toast-icon">
-            {feedback.type === "success" ? "âœ“" : feedback.type === "error" ? "!" : "âš "}
+            {feedback.type === "success" ? "✓" : feedback.type === "error" ? "!" : "⚠"}
           </div>
           <div className="prod-toast-content">
             <strong>
@@ -339,7 +339,7 @@ export default function Production() {
             </strong>
             <span>{feedback.message}</span>
           </div>
-          <button type="button" className="prod-toast-close" onClick={() => setFeedback(null)} aria-label="Tutup notifikasi">Ã—</button>
+          <button type="button" className="prod-toast-close" onClick={() => setFeedback(null)} aria-label="Tutup notifikasi">×</button>
         </div>
       )}
 
@@ -364,7 +364,7 @@ export default function Production() {
             Shift
             <select value={shift} onChange={(e) => setShift(e.target.value)}>
               {SHIFTS.map((s) => (
-                <option key={s.id} value={s.name}>{s.name} ({s.start}â€“{s.end})</option>
+                <option key={s.id} value={s.name}>{s.name} ({s.start}–{s.end})</option>
               ))}
             </select>
           </label>
@@ -493,10 +493,10 @@ export default function Production() {
                     <td>{normalizeShiftLabel(item.shift)}</td>
                     <td><strong>{item.machine}</strong></td>
                     <td>{item.partNumber || "-"}</td>
-                    <td>{item.startTime} â€“ {item.endTime}</td>
+                    <td>{item.startTime} – {item.endTime}</td>
                     <td><strong>{formatNumber(item.output)} pcs</strong></td>
                     <td>{item.pic || "-"}</td>
-                    <td>{item.notes || "â€”"}</td>
+                    <td>{item.notes || "—"}</td>
                     <td>
                       <button type="button" className="prod-delete-btn" onClick={() => handleDelete(item.id)} disabled={saving}>
                         Hapus

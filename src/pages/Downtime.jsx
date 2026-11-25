@@ -380,7 +380,7 @@ export default function Downtime() {
 
       <section className="dt-stats">
         <div className="dt-stat-card">
-          <div className="dt-stat-icon blue">â—·</div>
+          <div className="dt-stat-icon blue">◷</div>
           <div>
             <span>Total Downtime</span>
             <strong>{formatDuration(totalMinutes)}</strong>
@@ -396,7 +396,7 @@ export default function Downtime() {
           </div>
         </div>
         <div className="dt-stat-card">
-          <div className="dt-stat-icon orange">â–¦</div>
+          <div className="dt-stat-icon orange">▦</div>
           <div>
             <span>Mesin Terdampak</span>
             <strong>{affectedMachines}</strong>
@@ -404,7 +404,7 @@ export default function Downtime() {
           </div>
         </div>
         <div className="dt-stat-card">
-          <div className="dt-stat-icon navy">â‰¡</div>
+          <div className="dt-stat-icon navy">≡</div>
           <div>
             <span>Total Kejadian</span>
             <strong>{downtimeEvents.length}</strong>
@@ -424,7 +424,7 @@ export default function Downtime() {
 
           {categorySummary.length === 0 ? (
             <div className="dt-empty">
-              <span>â—·</span>
+              <span>◷</span>
               <strong>Belum ada data downtime</strong>
               <p>Data kategori akan muncul setelah pencatatan dilakukan.</p>
             </div>
@@ -460,7 +460,7 @@ export default function Downtime() {
 
           {activeEvents.length === 0 ? (
             <div className="dt-empty">
-              <span>âœ“</span>
+              <span>✓</span>
               <strong>Tidak ada downtime aktif</strong>
               <p>Belum ada catatan downtime yang masih berlangsung pada filter ini.</p>
             </div>
@@ -520,9 +520,9 @@ export default function Downtime() {
                     <td>{event.category}</td>
                     <td>{getShift(event.startAt)}</td>
                     <td>{formatDate(event.startAt)}</td>
-                    <td>{event.endAt ? formatDate(event.endAt) : "â€”"}</td>
+                    <td>{event.endAt ? formatDate(event.endAt) : "—"}</td>
                     <td><strong>{formatDuration(getMinutes(event.startAt, event.endAt))}</strong></td>
-                    <td>{event.pic || "â€”"}</td>
+                    <td>{event.pic || "—"}</td>
                     <td>
                       <span className={`dt-status ${event.endAt ? "finished" : "active"}`}>
                         <i />
@@ -557,7 +557,7 @@ export default function Downtime() {
                 <h2>{editingId ? "Edit Downtime" : "Tambah Downtime"}</h2>
                 <p>Catat kejadian downtime mesin secara aktual.</p>
               </div>
-              <button type="button" onClick={closeForm}>Ã—</button>
+              <button type="button" onClick={closeForm}>×</button>
             </div>
 
             <div className="dt-modal-body">

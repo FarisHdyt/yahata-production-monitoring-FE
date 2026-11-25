@@ -283,13 +283,13 @@ const DEFAULT_MASTER_DATA = [
     rpm: 55,
     pcsPerRev: 1,
     customer: "NHK Spring Indonesia",
-    sizePart: "M8X25 Ã˜ 11,97",
+    sizePart: "M8X25 Ø 11,97",
     picShift1: "Nanda Ferry C",
     picShift2: "Fiki Firmansyah",
     partOptions: [
-      { partNo: "521-1020-IN", customer: "NHK Spring Indonesia", sizePart: "M8X25 Ã˜ 11,97", rpm: 55 },
+      { partNo: "521-1020-IN", customer: "NHK Spring Indonesia", sizePart: "M8X25 Ø 11,97", rpm: 55 },
       { partNo: "531-0930-IN", customer: "NHK Spring Indonesia", sizePart: "M12X20,5", rpm: 45 },
-      { partNo: "521-0980-IN", customer: "NHK Spring Indonesia", sizePart: "M8X25 Ã˜ 8,98", rpm: 50 },
+      { partNo: "521-0980-IN", customer: "NHK Spring Indonesia", sizePart: "M8X25 Ø 8,98", rpm: 50 },
       { partNo: "531-0960-IN", customer: "NHK Spring Indonesia", sizePart: "M12X22,5", rpm: 45 },
       { partNo: "521-0990-IN", customer: "NHK Spring Indonesia", sizePart: "011,98XL32", rpm: 50 },
       { partNo: "531-0940-IN", customer: "NHK Spring Indonesia", sizePart: "L21.5", rpm: 45 },
@@ -587,7 +587,7 @@ export default function MasterProduction() {
             onClick={handleResetToExcelDefault}
             disabled={saving || loading}
           >
-            â†» Load Default Excel (14 Mesin)
+            ↻ Load Default Excel (14 Mesin)
           </button>
           <button
             type="button"
