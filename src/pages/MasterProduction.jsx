@@ -1,12 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { MACHINES } from "../config";
-
-const MASTER_STORAGE_KEY = "yahataMasterProduction";
-const DUMMY_STORAGE_KEYS = [
-  "yahataProductionRecords",
-  "yahataDowntimeEvents",
-  "yahataShiftPicRecords",
-];
 
 const DEFAULT_MASTER_DATA = [
   {
@@ -290,13 +283,13 @@ const DEFAULT_MASTER_DATA = [
     rpm: 55,
     pcsPerRev: 1,
     customer: "NHK Spring Indonesia",
-    sizePart: "M8X25 Ø 11,97",
+    sizePart: "M8X25 Ã˜ 11,97",
     picShift1: "Nanda Ferry C",
     picShift2: "Fiki Firmansyah",
     partOptions: [
-      { partNo: "521-1020-IN", customer: "NHK Spring Indonesia", sizePart: "M8X25 Ø 11,97", rpm: 55 },
+      { partNo: "521-1020-IN", customer: "NHK Spring Indonesia", sizePart: "M8X25 Ã˜ 11,97", rpm: 55 },
       { partNo: "531-0930-IN", customer: "NHK Spring Indonesia", sizePart: "M12X20,5", rpm: 45 },
-      { partNo: "521-0980-IN", customer: "NHK Spring Indonesia", sizePart: "M8X25 Ø 8,98", rpm: 50 },
+      { partNo: "521-0980-IN", customer: "NHK Spring Indonesia", sizePart: "M8X25 Ã˜ 8,98", rpm: 50 },
       { partNo: "531-0960-IN", customer: "NHK Spring Indonesia", sizePart: "M12X22,5", rpm: 45 },
       { partNo: "521-0990-IN", customer: "NHK Spring Indonesia", sizePart: "011,98XL32", rpm: 50 },
       { partNo: "531-0940-IN", customer: "NHK Spring Indonesia", sizePart: "L21.5", rpm: 45 },
@@ -328,22 +321,36 @@ const DEFAULT_MASTER_DATA = [
   },
 ];
 
-function loadInitialMasters() {
-  try {
-    const raw = localStorage.getItem(MASTER_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
-    }
-  } catch {
-    // ignore parse error
-  }
-  localStorage.setItem(MASTER_STORAGE_KEY, JSON.stringify(DEFAULT_MASTER_DATA));
-  return DEFAULT_MASTER_DATA;
+
+import { fetchMasters, resetOperationalData, saveMaster } from "../services/dataService";
+
+function buildMergedMasters(apiMasters) {
+  const byMachine = new Map((Array.isArray(apiMasters) ? apiMasters : []).map((m) => [m.machine, m]));
+  return DEFAULT_MASTER_DATA.map((def) => {
+    const api = byMachine.get(def.machine);
+    if (!api) return { ...def };
+    const hasApiData = !!(api.partNumber || api.isConfigured);
+    return {
+      ...def,
+      ...api,
+      partNumber: api.partNumber || def.partNumber || "",
+      rpm: api.rpm ?? def.rpm ?? 0,
+      pcsPerRev: api.pcsPerRev ?? def.pcsPerRev ?? 1,
+      customer: api.customer || def.customer || "",
+      sizePart: api.sizePart || def.sizePart || "",
+      picShift1: api.picShift1 || def.picShift1 || "",
+      picShift2: api.picShift2 || def.picShift2 || "",
+      partOptions:
+        Array.isArray(api.partOptions) && api.partOptions.length > 0
+          ? api.partOptions
+          : def.partOptions || [],
+      isConfigured: hasApiData || !!api.isConfigured,
+    };
+  });
 }
 
 export default function MasterProduction() {
-  const [masters, setMasters] = useState(loadInitialMasters);
+  const [masters, setMasters] = useState(DEFAULT_MASTER_DATA);
   const [selectedMachine, setSelectedMachine] = useState(MACHINES[0] || "NF-19B");
   const [partNumber, setPartNumber] = useState("");
   const [rpm, setRpm] = useState("");
@@ -354,6 +361,30 @@ export default function MasterProduction() {
   const [picShift2, setPicShift2] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [notice, setNotice] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const loadMasters = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const apiMasters = await fetchMasters();
+      const merged = buildMergedMasters(apiMasters);
+      setMasters(merged);
+      try {
+        localStorage.setItem("yahataMasterProduction", JSON.stringify(merged));
+      } catch {}
+      window.dispatchEvent(new Event("yahata-storage-updated"));
+    } catch (err) {
+      setNotice(`Gagal memuat master dari backend: ${err?.message || "unknown error"}`);
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMasters(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const currentDefault = useMemo(
     () => DEFAULT_MASTER_DATA.find((item) => item.machine === selectedMachine),
@@ -382,10 +413,27 @@ export default function MasterProduction() {
     }
   }, [selectedMachine, masters, currentDefault]);
 
-  const persistMasters = (nextList) => {
+  const persistLocalMirror = (nextList) => {
     setMasters(nextList);
-    localStorage.setItem(MASTER_STORAGE_KEY, JSON.stringify(nextList));
+    try {
+      localStorage.setItem("yahataMasterProduction", JSON.stringify(nextList));
+    } catch {}
     window.dispatchEvent(new Event("yahata-storage-updated"));
+  };
+
+  const upsertManyToBackend = async (rows) => {
+    for (const row of rows) {
+      await saveMaster(row.machine, {
+        partNumber: row.partNumber,
+        rpm: Number(row.rpm || 0),
+        pcsPerRev: Number(row.pcsPerRev || 1),
+        customer: row.customer || "",
+        sizePart: row.sizePart || "",
+        picShift1: row.picShift1 || "",
+        picShift2: row.picShift2 || "",
+        partOptions: row.partOptions || [],
+      });
+    }
   };
 
   const handleSelectPartPreset = (chosenPartNo) => {
@@ -400,7 +448,7 @@ export default function MasterProduction() {
     }
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!selectedMachine || !partNumber.trim()) {
       setNotice("Mesin dan Part Number wajib diisi.");
@@ -417,49 +465,82 @@ export default function MasterProduction() {
       picShift1: picShift1.trim(),
       picShift2: picShift2.trim(),
       partOptions: currentDefault?.partOptions || [],
+      isConfigured: true,
     };
 
-    const exists = masters.some((item) => item.machine === selectedMachine);
-    const nextList = exists
-      ? masters.map((item) =>
-          item.machine === selectedMachine ? updatedItem : item
-        )
-      : [...masters, updatedItem];
-
-    persistMasters(nextList);
-    setNotice(`Master Production untuk ${selectedMachine} berhasil disimpan.`);
+    setSaving(true);
+    try {
+      const saved = await saveMaster(selectedMachine, updatedItem);
+      const mergedSaved = buildMergedMasters([
+        ...masters.filter((m) => m.machine !== selectedMachine),
+        { ...updatedItem, ...saved, partOptions: updatedItem.partOptions },
+      ]);
+      persistLocalMirror(mergedSaved);
+      setNotice(`Master Production untuk ${selectedMachine} berhasil disimpan.`);
+    } catch (err) {
+      setNotice(`Gagal menyimpan master ${selectedMachine}: ${err?.message || "unknown error"}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleResetSingleMachine = (machineName, e) => {
+  const handleResetSingleMachine = async (machineName, e) => {
     e.stopPropagation();
     const defaultRow = DEFAULT_MASTER_DATA.find((m) => m.machine === machineName);
     if (!defaultRow) return;
-
-    const exists = masters.some((m) => m.machine === machineName);
-    const nextList = exists
-      ? masters.map((m) => (m.machine === machineName ? defaultRow : m))
-      : [...masters, defaultRow];
-
-    persistMasters(nextList);
-    setNotice(`Konfigurasi ${machineName} dikembalikan ke default Excel.`);
+    setSaving(true);
+    try {
+      await saveMaster(machineName, defaultRow);
+      const nextList = masters.map((m) => (m.machine === machineName ? { ...defaultRow } : m));
+      persistLocalMirror(nextList.length === masters.length ? nextList : buildMergedMasters([...masters, { ...defaultRow }]));
+      await loadMasters(false);
+      setNotice(`Konfigurasi ${machineName} dikembalikan ke default Excel.`);
+    } catch (err) {
+      setNotice(`Gagal reset ${machineName}: ${err?.message || "unknown error"}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleResetToExcelDefault = () => {
-    persistMasters(DEFAULT_MASTER_DATA);
-    setNotice("Seluruh 14 mesin berhasil di-reset ke data default Excel Forming.");
+  const handleResetToExcelDefault = async () => {
+    setSaving(true);
+    try {
+      await upsertManyToBackend(DEFAULT_MASTER_DATA);
+      persistLocalMirror(DEFAULT_MASTER_DATA.map((d) => ({ ...d })));
+      await loadMasters(false);
+      setNotice("Seluruh 14 mesin berhasil di-reset ke data default Excel Forming.");
+    } catch (err) {
+      setNotice(`Gagal load default Excel ke backend: ${err?.message || "unknown error"}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleResetDummyData = () => {
+  const handleResetDummyData = async () => {
     const ok = window.confirm(
-      "Hapus seluruh data uji coba (Production, Downtime, dan Shift & PIC) di LocalStorage? Master Production juga akan dikembalikan ke default Excel."
+      "Hapus seluruh data uji coba (Production, Downtime, dan Shift & PIC) di backend? Master Production juga akan dikembalikan ke default Excel."
     );
     if (!ok) return;
 
-    DUMMY_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
-    localStorage.setItem(MASTER_STORAGE_KEY, JSON.stringify(DEFAULT_MASTER_DATA));
-    setMasters(DEFAULT_MASTER_DATA);
-    window.dispatchEvent(new Event("yahata-storage-updated"));
-    setNotice("Data uji coba dibersihkan dan Master Production dikembalikan ke default Excel.");
+    setSaving(true);
+    try {
+      await resetOperationalData(true);
+      await upsertManyToBackend(DEFAULT_MASTER_DATA);
+      try {
+        ["yahataProductionRecords", "yahataDowntimeEvents", "yahataShiftPicRecords"].forEach((key) =>
+          localStorage.removeItem(key)
+        );
+        localStorage.setItem("yahataMasterProduction", JSON.stringify(DEFAULT_MASTER_DATA));
+      } catch {}
+      window.dispatchEvent(new Event("yahata-storage-updated"));
+      persistLocalMirror(DEFAULT_MASTER_DATA.map((d) => ({ ...d })));
+      await loadMasters(false);
+      setNotice("Data uji coba dibersihkan dan Master Production dikembalikan ke default Excel.");
+    } catch (err) {
+      setNotice(`Gagal reset data uji coba: ${err?.message || "unknown error"}${err?.status === 403 ? " (butuh akun admin)" : ""}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const filteredMasters = useMemo(() => {
@@ -504,13 +585,15 @@ export default function MasterProduction() {
             type="button"
             className="rp-refresh-btn"
             onClick={handleResetToExcelDefault}
+            disabled={saving || loading}
           >
-            ↻ Load Default Excel (14 Mesin)
+            â†» Load Default Excel (14 Mesin)
           </button>
           <button
             type="button"
             className="mp-danger-btn"
             onClick={handleResetDummyData}
+            disabled={saving || loading}
           >
             Reset Data Uji Coba
           </button>
@@ -518,6 +601,7 @@ export default function MasterProduction() {
       </div>
 
       {notice && <div className="rp-info-note">{notice}</div>}
+      {loading && <div className="rp-info-note">Memuat data master dari backend...</div>}
 
       <section className="rp-filter-panel">
         <form onSubmit={handleSave} className="rp-filters">
@@ -621,8 +705,8 @@ export default function MasterProduction() {
             />
           </label>
 
-          <button type="submit" className="prod-submit-btn">
-            Simpan
+          <button type="submit" className="prod-submit-btn" disabled={saving || loading}>
+            {saving ? "Menyimpan..." : "Simpan"}
           </button>
         </form>
       </section>
@@ -677,6 +761,7 @@ export default function MasterProduction() {
                       type="button"
                       className="mp-row-reset-btn"
                       onClick={(e) => handleResetSingleMachine(row.machine, e)}
+                      disabled={saving || loading}
                     >
                       Reset
                     </button>

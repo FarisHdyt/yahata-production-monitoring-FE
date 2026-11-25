@@ -1,6 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MACHINES, DOWNTIME_CATEGORIES } from "../config";
 import FormingAnalyticsDashboard from "../components/FormingAnalyticsDashboard";
+import {
+  fetchDowntimeEvents,
+  fetchMasters,
+  fetchProductionRecords,
+  fetchShiftAssignments,
+} from "../services/dataService";
 
 const DOWNTIME_STORAGE_KEY = "yahataDowntimeEvents";
 const PRODUCTION_STORAGE_KEY = "yahataProductionRecords";
@@ -115,10 +121,12 @@ function downloadCSV(filename, rows) {
 }
 
 export default function Reports() {
-  const [downtimeRecords, setDowntimeRecords] = useState(loadDowntime);
-  const [productionRecords, setProductionRecords] = useState(loadProduction);
-  const [masters, setMasters] = useState(loadMasters);
-  const [shiftPicRecords, setShiftPicRecords] = useState(loadShiftPic);
+  const [downtimeRecords, setDowntimeRecords] = useState([]);
+  const [productionRecords, setProductionRecords] = useState([]);
+  const [masters, setMasters] = useState([]);
+  const [shiftPicRecords, setShiftPicRecords] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const today = new Date().toLocaleDateString("en-CA");
 
@@ -127,12 +135,44 @@ export default function Reports() {
   const [shiftFilter, setShiftFilter] = useState("all");
   const [machineFilter, setMachineFilter] = useState("all");
 
-  const refreshAllData = () => {
-    setDowntimeRecords(loadDowntime());
-    setProductionRecords(loadProduction());
-    setMasters(loadMasters());
-    setShiftPicRecords(loadShiftPic());
+  const refreshAllData = async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const [dt, prod, mst, pics] = await Promise.all([
+        fetchDowntimeEvents(),
+        fetchProductionRecords(),
+        fetchMasters(),
+        fetchShiftAssignments(),
+      ]);
+      setDowntimeRecords(Array.isArray(dt) ? dt : []);
+      setProductionRecords(Array.isArray(prod) ? prod : []);
+      setMasters(Array.isArray(mst) ? mst : []);
+      setShiftPicRecords(Array.isArray(pics) ? pics : []);
+      try {
+        localStorage.setItem(DOWNTIME_STORAGE_KEY, JSON.stringify(Array.isArray(dt) ? dt : []));
+        localStorage.setItem(PRODUCTION_STORAGE_KEY, JSON.stringify(Array.isArray(prod) ? prod : []));
+        localStorage.setItem(MASTER_STORAGE_KEY, JSON.stringify(Array.isArray(mst) ? mst : []));
+        localStorage.setItem(SHIFT_PIC_STORAGE_KEY, JSON.stringify(Array.isArray(pics) ? pics : []));
+      } catch {}
+    } catch (err) {
+      setLoadError(err?.message || "Gagal memuat data laporan dari backend.");
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    refreshAllData();
+    const handler = () => refreshAllData();
+    window.addEventListener("storage", handler);
+    window.addEventListener("yahata-storage-updated", handler);
+    return () => {
+      window.removeEventListener("storage", handler);
+      window.removeEventListener("yahata-storage-updated", handler);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredRecords = useMemo(() => {
     return downtimeRecords
@@ -909,7 +949,7 @@ export default function Reports() {
 
       <div className="rp-footer-note">
         <span>YAHATA PRODUCTION MONITORING</span>
-        <span>Report generated from locally stored production, PIC, and downtime records.</span>
+        <span>Report generated from backend production, PIC, and downtime records.</span>
       </div>
     </div>
   );

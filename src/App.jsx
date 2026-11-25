@@ -8,6 +8,7 @@ import MasterProduction from "./pages/MasterProduction.jsx";
 import Downtime from "./pages/Downtime.jsx";
 import ShiftPic from "./pages/ShiftPic.jsx";
 import Reports from "./pages/Reports.jsx";
+import { apiRequest, clearStoredSession, getStoredSession, storeSession } from "./api.js";
 
 import yahataLogo from "./assets/yahata-logo.png";
 
@@ -15,8 +16,14 @@ const AUTH_STORAGE_KEY = "yahataAuthSession";
 
 function loadSession() {
   try {
+    const stored = getStoredSession();
+    if (stored?.token && stored?.user) return stored;
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // Require backend token for synchronized mode; legacy local mock sessions must re-login.
+    if (parsed?.token && parsed?.user) return parsed;
+    return null;
   } catch {
     return null;
   }
@@ -68,17 +75,24 @@ export default function App() {
     const closeTimerRef = useRef(null);
 
     const handleLoginSuccess = (newSession) => {
-        setSession(newSession);
+        const normalized = storeSession(newSession) || newSession;
+        setSession(normalized);
         try {
-            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newSession));
+            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(normalized));
         } catch {
             // abaikan jika storage diblokir
         }
     };
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        try {
+            await apiRequest("/auth/logout", { method: "POST" });
+        } catch {
+            // abaikan error logout; sesi lokal tetap dibersihkan
+        }
         setSession(null);
         try {
+            clearStoredSession();
             localStorage.removeItem(AUTH_STORAGE_KEY);
         } catch {
             // abaikan jika storage diblokir
@@ -210,7 +224,7 @@ export default function App() {
                     <div className="topbar-right">
                         <span className="system-status">
                             <span className="status-dot"></span>
-                            LocalStorage Mode
+                            Live Backend
                         </span>
 
                         <div className="user-profile">

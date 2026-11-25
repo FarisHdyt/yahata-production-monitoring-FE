@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { MACHINES, SHIFTS, DOWNTIME_CATEGORIES } from "../config.js";
+import {
+    fetchDowntimeEvents,
+    fetchMasters,
+    fetchProductionRecords,
+    fetchShiftAssignments,
+} from "../services/dataService";
 
 const PRODUCTION_STORAGE_KEY = "yahataProductionRecords";
 const DOWNTIME_STORAGE_KEY = "yahataDowntimeEvents";
@@ -125,34 +131,54 @@ export default function Dashboard() {
     const [selectedPart, setSelectedPart] = useState("all");
     const [activeMachine, setActiveMachine] = useState(null);
     const [activeHour, setActiveHour] = useState(null);
-    const [storageTick, setStorageTick] = useState(0);
+    const [productionRecords, setProductionRecords] = useState([]);
+    const [downtimeEvents, setDowntimeEvents] = useState([]);
+    const [masterRecords, setMasterRecords] = useState([]);
+    const [shiftPicRecords, setShiftPicRecords] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [loadError, setLoadError] = useState("");
 
     useEffect(() => {
-        const handleSync = () => setStorageTick((prev) => prev + 1);
+        let active = true;
+        const load = async () => {
+            setLoading(true);
+            setLoadError("");
+            try {
+                const params = selectedDate ? { date: selectedDate } : {};
+                const [prod, dt, masters, pics] = await Promise.all([
+                    fetchProductionRecords(params),
+                    fetchDowntimeEvents(params),
+                    fetchMasters(),
+                    fetchShiftAssignments(params),
+                ]);
+                if (!active) return;
+                setProductionRecords(Array.isArray(prod) ? prod : []);
+                setDowntimeEvents(Array.isArray(dt) ? dt : []);
+                setMasterRecords(Array.isArray(masters) ? masters : []);
+                setShiftPicRecords(Array.isArray(pics) ? pics : []);
+                try {
+                    localStorage.setItem(PRODUCTION_STORAGE_KEY, JSON.stringify(Array.isArray(prod) ? prod : []));
+                    localStorage.setItem(DOWNTIME_STORAGE_KEY, JSON.stringify(Array.isArray(dt) ? dt : []));
+                    localStorage.setItem(MASTER_STORAGE_KEY, JSON.stringify(Array.isArray(masters) ? masters : []));
+                    localStorage.setItem(SHIFT_PIC_STORAGE_KEY, JSON.stringify(Array.isArray(pics) ? pics : []));
+                } catch {}
+            } catch (err) {
+                if (!active) return;
+                setLoadError(err?.message || "Gagal memuat data dashboard dari backend.");
+            } finally {
+                if (active) setLoading(false);
+            }
+        };
+        load();
+        const handleSync = () => load();
         window.addEventListener("storage", handleSync);
         window.addEventListener("yahata-storage-updated", handleSync);
         return () => {
+            active = false;
             window.removeEventListener("storage", handleSync);
             window.removeEventListener("yahata-storage-updated", handleSync);
         };
-    }, []);
-
-    const productionRecords = useMemo(
-        () => safeReadArray(PRODUCTION_STORAGE_KEY),
-        [storageTick]
-    );
-    const downtimeEvents = useMemo(
-        () => safeReadArray(DOWNTIME_STORAGE_KEY),
-        [storageTick]
-    );
-    const masterRecords = useMemo(
-        () => safeReadArray(MASTER_STORAGE_KEY),
-        [storageTick]
-    );
-    const shiftPicRecords = useMemo(
-        () => safeReadArray(SHIFT_PIC_STORAGE_KEY),
-        [storageTick]
-    );
+    }, [selectedDate]);
 
     const partOptions = useMemo(() => {
         const fromMaster = masterRecords.map((m) => m.partNumber).filter(Boolean);
@@ -448,7 +474,7 @@ export default function Dashboard() {
                 <div className="header-info">
                     <div>
                         <span className="connection-dot"></span>
-                        <span>LocalStorage Mode</span>
+                        <span>Live Backend</span>
                     </div>
                     <small>Data otomatis dari halaman operasional</small>
                 </div>
