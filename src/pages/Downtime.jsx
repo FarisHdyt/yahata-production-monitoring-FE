@@ -1,5 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { MACHINES, SHIFTS } from "../config";
+import Skeleton from "../components/Skeleton.jsx";
+import useDelayedLoading from "../hooks/useDelayedLoading.js";
 import {
   createDowntimeEvent,
   deleteDowntimeEvent,
@@ -106,9 +108,12 @@ export default function Downtime() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [picTouched, setPicTouched] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [hasLoadedData, setHasLoadedData] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const { showSkeleton, isInitialPending } = useDelayedLoading(loading);
 
   const [dateFilter, setDateFilter] = useState(() => toLocalDateString(new Date()));
   const [shiftFilter, setShiftFilter] = useState("all");
@@ -134,13 +139,18 @@ export default function Downtime() {
       setEvents(ev || []);
       setShiftPicList(pics || []);
       setProductionList(prods || []);
+      setHasLoadedData(true);
+      setLoadError("");
+      setNotice("");
       try {
         localStorage.setItem("yahataDowntimeEvents", JSON.stringify(ev || []));
         localStorage.setItem("yahataShiftPicRecords", JSON.stringify(pics || []));
         localStorage.setItem("yahataProductionRecords", JSON.stringify(prods || []));
       } catch {}
     } catch (err) {
-      setNotice(`Gagal memuat data downtime: ${err?.message || "unknown error"}`);
+      const message = `Gagal memuat data downtime: ${err?.message || "unknown error"}`;
+      setLoadError(message);
+      setNotice(message);
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -349,9 +359,9 @@ export default function Downtime() {
         </button>
       </div>
 
-      {(loading || notice) && (
+      {(loadError || notice) && (
         <div className="rp-info-note" style={{ marginBottom: 12 }}>
-          {loading ? "Memuat data downtime dari backend..." : notice}
+          {loadError || notice}
         </div>
       )}
 
@@ -388,6 +398,10 @@ export default function Downtime() {
       </section>
 
       <section className="dt-stats">
+        {showSkeleton ? (
+          <Skeleton variant="cards" count={4} />
+        ) : hasLoadedData ? (
+          <>
         <div className="dt-stat-card">
           <div className="dt-stat-icon blue">◷</div>
           <div>
@@ -420,6 +434,8 @@ export default function Downtime() {
             <small>Catatan downtime</small>
           </div>
         </div>
+          </>
+        ) : null}
       </section>
 
       <section className="dt-content-grid">
@@ -431,7 +447,11 @@ export default function Downtime() {
             </div>
           </div>
 
-          {categorySummary.length === 0 ? (
+          {showSkeleton ? (
+            <Skeleton variant="list" rows={4} />
+          ) : !hasLoadedData ? (
+            loadError ? <div className="dt-empty">Data downtime gagal dimuat dari backend.</div> : null
+          ) : categorySummary.length === 0 ? (
             <div className="dt-empty">
               <span>◷</span>
               <strong>Belum ada data downtime</strong>
@@ -467,7 +487,11 @@ export default function Downtime() {
             <span className="dt-active-count">{activeEvents.length} Aktif</span>
           </div>
 
-          {activeEvents.length === 0 ? (
+          {showSkeleton ? (
+            <Skeleton variant="list" rows={2} />
+          ) : !hasLoadedData ? (
+            loadError ? <div className="dt-empty">Data downtime gagal dimuat dari backend.</div> : null
+          ) : activeEvents.length === 0 ? (
             <div className="dt-empty">
               <span>✓</span>
               <strong>Tidak ada downtime aktif</strong>
@@ -518,9 +542,13 @@ export default function Downtime() {
               </tr>
             </thead>
             <tbody>
-              {downtimeEvents.length === 0 ? (
+              {showSkeleton ? (
+                <Skeleton variant="table" rows={5} columns={9} />
+              ) : isInitialPending ? null : downtimeEvents.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="dt-table-empty">Belum ada data downtime untuk filter ini.</td>
+                  <td colSpan="9" className="dt-table-empty">
+                    {loadError && !hasLoadedData ? "Data downtime gagal dimuat dari backend." : "Belum ada data downtime untuk filter ini."}
+                  </td>
                 </tr>
               ) : (
                 downtimeEvents.map((event) => (

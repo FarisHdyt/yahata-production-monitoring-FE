@@ -323,6 +323,8 @@ const DEFAULT_MASTER_DATA = [
 
 
 import { fetchMasters, resetOperationalData, saveMaster } from "../services/dataService";
+import Skeleton from "../components/Skeleton.jsx";
+import useDelayedLoading from "../hooks/useDelayedLoading.js";
 
 function buildMergedMasters(apiMasters) {
   const byMachine = new Map((Array.isArray(apiMasters) ? apiMasters : []).map((m) => [m.machine, m]));
@@ -350,7 +352,7 @@ function buildMergedMasters(apiMasters) {
 }
 
 export default function MasterProduction() {
-  const [masters, setMasters] = useState(DEFAULT_MASTER_DATA);
+  const [masters, setMasters] = useState([]);
   const [selectedMachine, setSelectedMachine] = useState(MACHINES[0] || "NF-19B");
   const [partNumber, setPartNumber] = useState("");
   const [rpm, setRpm] = useState("");
@@ -361,21 +363,27 @@ export default function MasterProduction() {
   const [picShift2, setPicShift2] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [notice, setNotice] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [hasLoadedData, setHasLoadedData] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const { showSkeleton } = useDelayedLoading(loading);
 
   const loadMasters = async (showLoading = true) => {
     if (showLoading) setLoading(true);
+    setLoadError("");
     try {
       const apiMasters = await fetchMasters();
       const merged = buildMergedMasters(apiMasters);
       setMasters(merged);
+      setHasLoadedData(true);
+      setLoadError("");
       try {
         localStorage.setItem("yahataMasterProduction", JSON.stringify(merged));
       } catch {}
       window.dispatchEvent(new Event("yahata-storage-updated"));
     } catch (err) {
-      setNotice(`Gagal memuat master dari backend: ${err?.message || "unknown error"}`);
+      setLoadError(`Gagal memuat master dari backend: ${err?.message || "unknown error"}`);
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -392,6 +400,7 @@ export default function MasterProduction() {
   );
 
   useEffect(() => {
+    if (loading || (loadError && !hasLoadedData)) return;
     const existing =
       masters.find((item) => item.machine === selectedMachine) || currentDefault;
     if (existing) {
@@ -411,7 +420,7 @@ export default function MasterProduction() {
       setPicShift1("");
       setPicShift2("");
     }
-  }, [selectedMachine, masters, currentDefault]);
+  }, [selectedMachine, masters, currentDefault, loading, loadError, hasLoadedData]);
 
   const persistLocalMirror = (nextList) => {
     setMasters(nextList);
@@ -601,7 +610,7 @@ export default function MasterProduction() {
       </div>
 
       {notice && <div className="rp-info-note">{notice}</div>}
-      {loading && <div className="rp-info-note">Memuat data master dari backend...</div>}
+      {loadError && <div className="rp-info-note" role="alert">{loadError}</div>}
 
       <section className="rp-filter-panel">
         <form onSubmit={handleSave} className="rp-filters">
@@ -617,7 +626,7 @@ export default function MasterProduction() {
             </select>
           </label>
 
-          {currentDefault?.partOptions?.length > 0 && (
+          {!loading && (!loadError || hasLoadedData) && currentDefault?.partOptions?.length > 0 && (
             <label>
               Pilih Part ({currentDefault.partOptions.length})
               <select
@@ -743,7 +752,11 @@ export default function MasterProduction() {
               </tr>
             </thead>
             <tbody>
-              {filteredMasters.map((row) => (
+              {showSkeleton ? (
+                <Skeleton variant="table" rows={14} columns={9} />
+              ) : loadError && !hasLoadedData ? (
+                <tr><td colSpan="9" className="rp-empty">Data master gagal dimuat dari backend.</td></tr>
+              ) : filteredMasters.map((row) => (
                 <tr
                   key={row.machine}
                   onClick={() => setSelectedMachine(row.machine)}

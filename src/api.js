@@ -14,6 +14,7 @@ function normalizeSession(raw) {
     tokenType: raw.tokenType || "Bearer",
     expiresAt: raw.expiresAt || null,
     loggedInAt: raw.loggedInAt || new Date().toISOString(),
+    permissions: raw.permissions || null,
   };
 }
 
@@ -87,6 +88,13 @@ function extractMessage(payload, fallback) {
   return fallback;
 }
 
+function notifyAuthExpired() {
+  clearStoredSession();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("yahata:auth-expired"));
+  }
+}
+
 // Request GET yang identik dan sedang berjalan digabung jadi satu (mencegah request ganda,
 // mis. efek React StrictMode di mode dev atau muat ulang beruntun). Hanya untuk GET tanpa body.
 const inflightGets = new Map();
@@ -115,7 +123,7 @@ async function apiRequestRaw(path, options = {}) {
   const payload = await parseResponse(response);
 
   if (response.status === 401) {
-    clearStoredSession();
+    notifyAuthExpired();
   }
 
   if (!response.ok) {
@@ -135,7 +143,7 @@ export async function apiDownload(path, options = {}) {
     headers: buildHeaders(options),
   });
   if (response.status === 401) {
-    clearStoredSession();
+    notifyAuthExpired();
   }
   if (!response.ok) {
     const payload = await parseResponse(response);

@@ -1,5 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { MACHINES, SHIFTS } from "../config";
+import Skeleton from "../components/Skeleton.jsx";
+import useDelayedLoading from "../hooks/useDelayedLoading.js";
 import {
   bulkSaveShiftAssignments,
   deleteShiftAssignment,
@@ -51,11 +53,14 @@ export default function ShiftPic() {
   const [date, setDate] = useState(getToday);
   const [shift, setShift] = useState("Shift 1");
   const [machine, setMachine] = useState(MACHINES[0] || "NF-19B");
-  const [pic, setPic] = useState(() => getDefaultPicForMachine("Shift 1", MACHINES[0] || "NF-19B"));
+  const [pic, setPic] = useState("");
   const [notes, setNotes] = useState("");
   const [notice, setNotice] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [hasLoadedData, setHasLoadedData] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { showSkeleton } = useDelayedLoading(loading);
 
   const showNotification = (message, type = "success") => {
     setNotice({ message, type, id: Date.now() });
@@ -78,13 +83,17 @@ export default function ShiftPic() {
       setRecords(shiftList || []);
       setProductionRecords(prodList || []);
       setMasters(masterList || []);
+      setHasLoadedData(true);
+      setLoadError("");
       try {
         localStorage.setItem("yahataShiftPicRecords", JSON.stringify(shiftList || []));
         localStorage.setItem("yahataProductionRecords", JSON.stringify(prodList || []));
         localStorage.setItem("yahataMasterProduction", JSON.stringify(masterList || []));
       } catch {}
     } catch (err) {
-      showNotification(`Gagal memuat data Shift & PIC: ${err?.message || "unknown error"}`, "error");
+      const message = `Gagal memuat data Shift & PIC: ${err?.message || "unknown error"}`;
+      setLoadError(message);
+      showNotification(message, "error");
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -107,6 +116,7 @@ export default function ShiftPic() {
   }, [date]);
 
   useEffect(() => {
+    if (!hasLoadedData) return;
     const existing = records.find(
       (r) => r.date === date && r.shift === shift && r.machine === machine
     );
@@ -119,7 +129,7 @@ export default function ShiftPic() {
       setPic(masterPic || getDefaultPicForMachine(shift, machine));
       setNotes("");
     }
-  }, [date, shift, machine, records, masters]);
+  }, [date, shift, machine, records, masters, hasLoadedData]);
 
   const handleSaveSingle = async (e) => {
     e.preventDefault();
@@ -260,7 +270,7 @@ export default function ShiftPic() {
         </button>
       </div>
 
-      {loading && <div className="rp-info-note">Memuat data Shift & PIC dari backend...</div>}
+      {loadError && <div className="rp-info-note" role="alert">{loadError}</div>}
 
       <section className="rp-filter-panel">
         <form onSubmit={handleSaveSingle} className="rp-filters">
@@ -302,7 +312,9 @@ export default function ShiftPic() {
           </div>
         </div>
         <div className="rp-shift-summary">
-          {manpowerSummary.map((person) => (
+          {showSkeleton ? (
+            <Skeleton variant="list" rows={4} />
+          ) : hasLoadedData ? manpowerSummary.map((person) => (
             <div className="rp-shift-item" key={person.pic}>
               <div className="rp-shift-number">
                 <span>{person.pic}</span>
@@ -310,7 +322,7 @@ export default function ShiftPic() {
               </div>
               <strong className="rp-shift-duration">{formatNumber(person.totalOutput)} pcs</strong>
             </div>
-          ))}
+          )) : null}
         </div>
       </section>
 
@@ -334,7 +346,11 @@ export default function ShiftPic() {
               </tr>
             </thead>
             <tbody>
-              {activeShiftRecords.map((row) => (
+              {showSkeleton ? (
+                <Skeleton variant="table" rows={14} columns={6} />
+              ) : loadError && !hasLoadedData ? (
+                <tr><td colSpan="6" className="rp-empty">Data Shift & PIC gagal dimuat dari backend.</td></tr>
+              ) : hasLoadedData && activeShiftRecords.map((row) => (
                 <tr key={row.id}>
                   <td><strong className={row.oneShiftRule ? "rp-event-status active" : ""}>{row.machine}</strong></td>
                   <td><strong>{row.pic}</strong></td>

@@ -1,5 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { MACHINES, SHIFTS } from "../config";
+import Skeleton from "../components/Skeleton.jsx";
+import useDelayedLoading from "../hooks/useDelayedLoading.js";
 import {
   createProductionRecord,
   deleteProductionRecord,
@@ -97,8 +99,11 @@ export default function Production() {
   const [filterMachine, setFilterMachine] = useState("all");
 
   const [feedback, setFeedback] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [hasLoadedData, setHasLoadedData] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { showSkeleton, isInitialPending } = useDelayedLoading(loading);
 
   useEffect(() => {
     if (!feedback) return;
@@ -121,12 +126,15 @@ export default function Production() {
       setMasters(masterList || []);
       setShiftPicRecords(shiftPics || []);
       setRecords(prodRecords || []);
+      setHasLoadedData(true);
+      setLoadError("");
       try {
         localStorage.setItem("yahataMasterProduction", JSON.stringify(masterList || []));
         localStorage.setItem("yahataShiftPicRecords", JSON.stringify(shiftPics || []));
         localStorage.setItem("yahataProductionRecords", JSON.stringify(prodRecords || []));
       } catch {}
     } catch (err) {
+      setLoadError(`Gagal memuat data produksi: ${err?.message || "unknown error"}`);
       showNotification(`Gagal memuat data produksi: ${err?.message || "unknown error"}`, "error");
     } finally {
       if (showLoading) setLoading(false);
@@ -165,6 +173,7 @@ export default function Production() {
   }, [currentMaster]);
 
   useEffect(() => {
+    if (!hasLoadedData) return;
     const shiftMatch = shiftPicRecords.find(
       (sp) => sp.date === date && sp.shift === shift && sp.machine === machine
     );
@@ -177,7 +186,7 @@ export default function Production() {
     } else {
       setPic(currentMaster?.picShift2 || DEFAULT_SHIFT2_PIC[machine] || "");
     }
-  }, [date, shift, machine, shiftPicRecords, currentMaster]);
+  }, [date, shift, machine, shiftPicRecords, currentMaster, hasLoadedData]);
 
   const computedOutput = useMemo(() => {
     if (useCounterMode) {
@@ -351,7 +360,7 @@ export default function Production() {
         </div>
       </div>
 
-      {loading && <div className="rp-info-note">Memuat data dari backend...</div>}
+      {loadError && <div className="rp-info-note" role="alert">{loadError}</div>}
 
       <section className="rp-filter-panel">
         <form onSubmit={handleSubmit} className="rp-filters">
@@ -482,9 +491,15 @@ export default function Production() {
               </tr>
             </thead>
             <tbody>
-              {visibleRecords.length === 0 ? (
+              {showSkeleton ? (
+                <Skeleton variant="table" rows={5} columns={9} />
+              ) : isInitialPending ? null : visibleRecords.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="rp-empty">Belum ada catatan produksi untuk filter ini.</td>
+                  <td colSpan="9" className="rp-empty">
+                    {loadError && !hasLoadedData
+                      ? "Data produksi gagal dimuat dari backend."
+                      : "Belum ada catatan produksi untuk filter ini."}
+                  </td>
                 </tr>
               ) : (
                 visibleRecords.map((item) => (

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MACHINES, SHIFTS, DOWNTIME_CATEGORIES } from "../config.js";
+import Skeleton from "../components/Skeleton.jsx";
+import useDelayedLoading from "../hooks/useDelayedLoading.js";
 import {
     fetchDowntimeEvents,
     fetchMasters,
@@ -26,17 +28,6 @@ const STATUS_COLORS = {
     downtime: "#dc2626",
     off_schedule: "#64748b",
     unconfirmed: "#d97706"
-};
-
-const safeReadArray = (key) => {
-    try {
-        const raw = localStorage.getItem(key);
-        if (!raw) return [];
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
-    } catch {
-        return [];
-    }
 };
 
 const getTodayKey = () => {
@@ -131,13 +122,15 @@ export default function Dashboard() {
     const [selectedPart, setSelectedPart] = useState("all");
     const [activeMachine, setActiveMachine] = useState(null);
     const [activeHour, setActiveHour] = useState(null);
-    const [productionRecords, setProductionRecords] = useState(() => safeReadArray(PRODUCTION_STORAGE_KEY));
-    const [downtimeEvents, setDowntimeEvents] = useState(() => safeReadArray(DOWNTIME_STORAGE_KEY));
-    const [masterRecords, setMasterRecords] = useState(() => safeReadArray(MASTER_STORAGE_KEY));
-    const [shiftPicRecords, setShiftPicRecords] = useState(() => safeReadArray(SHIFT_PIC_STORAGE_KEY));
-    const [loading, setLoading] = useState(false);
+    const [productionRecords, setProductionRecords] = useState([]);
+    const [downtimeEvents, setDowntimeEvents] = useState([]);
+    const [masterRecords, setMasterRecords] = useState([]);
+    const [shiftPicRecords, setShiftPicRecords] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState("");
+    const [hasLoadedData, setHasLoadedData] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
+    const { showSkeleton } = useDelayedLoading(loading);
 
     useEffect(() => {
         let active = true;
@@ -154,6 +147,9 @@ export default function Dashboard() {
             if (!active) return;
 
             const failed = [];
+            if ([prodResult, dtResult, masterResult, picResult].some((result) => result.status === "fulfilled")) {
+                setHasLoadedData(true);
+            }
             const applyResult = (result, label, setter, storageKey) => {
                 if (result.status === "fulfilled") {
                     const value = Array.isArray(result.value) ? result.value : [];
@@ -575,7 +571,7 @@ export default function Dashboard() {
                 </button>
             </section>
 
-            {(loading || loadError) && (
+            {loadError && (
                 <div
                     className="dashboard-status-note"
                     role="status"
@@ -594,7 +590,7 @@ export default function Dashboard() {
                         gap: "12px",
                     }}
                 >
-                    <span>{loadError || "Memuat data dashboard..."}</span>
+                    <span>{loadError}</span>
                     {loadError && !loading && (
                         <button
                             type="button"
@@ -617,6 +613,10 @@ export default function Dashboard() {
             )}
 
             <section className="kpi-container">
+                {showSkeleton ? (
+                    <Skeleton variant="cards" count={5} />
+                ) : hasLoadedData ? (
+                  <>
                 <article className="kpi-card">
                     <span className="kpi-label">Total Mesin</span>
                     <strong>{kpi.totalMachines}</strong>
@@ -650,9 +650,24 @@ export default function Dashboard() {
                         Efektif 480 mnt · DT: {formatDuration(kpi.totalDt)}
                     </small>
                 </article>
+                  </>
+                ) : null}
             </section>
 
             <section className="content-grid">
+                {showSkeleton ? (
+                    <>
+                        <article className="panel production-panel">
+                            <div className="panel-header"><h2>Tren Produksi per Jam</h2></div>
+                            <Skeleton variant="chart" count={12} />
+                        </article>
+                        <article className="panel downtime-panel">
+                            <div className="panel-header"><h2>Downtime Overview</h2></div>
+                            <Skeleton variant="list" rows={4} />
+                        </article>
+                    </>
+                ) : hasLoadedData ? (
+                  <>
                 <article className="panel production-panel">
                     <div className="panel-header">
                         <div>
@@ -756,6 +771,8 @@ export default function Dashboard() {
                         </div>
                     )}
                 </article>
+                  </>
+                ) : null}
             </section>
 
             <section className="panel machine-monitoring">
@@ -764,9 +781,13 @@ export default function Dashboard() {
                         <h2>Performa & Status Mesin Forming</h2>
                         <p>Klik kartu mesin untuk melihat detail performa mesin</p>
                     </div>
-                    <span className="machine-count">{machines.length} Mesin</span>
+                    <span className="machine-count">{hasLoadedData ? `${machines.length} Mesin` : ""}</span>
                 </div>
 
+                {showSkeleton ? (
+                    <Skeleton variant="cards" count={14} />
+                ) : hasLoadedData ? (
+                  <>
                 <div className="machine-legend">
                     {Object.entries(STATUS_LABELS).map(([key, label]) => (
                         <span key={key}>
@@ -822,9 +843,11 @@ export default function Dashboard() {
                         Tidak ada mesin yang sesuai dengan filter.
                     </div>
                 )}
+                  </>
+                ) : null}
             </section>
 
-            {selectedMachineData && (
+            {hasLoadedData && selectedMachineData && (
                 <section className="detail-panel">
                     <div className="panel-header">
                         <div>

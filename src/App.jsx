@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./bw-theme.css";
 
 import LoginPage from "./components/LoginPage.jsx";
@@ -70,9 +70,72 @@ const MENU = [
 
 export default function App() {
     const [session, setSession] = useState(loadSession);
+    const [authChecking, setAuthChecking] = useState(true);
     const [activePage, setActivePage] = useState("dashboard");
     const [sidebarExpanded, setSidebarExpanded] = useState(false);
     const closeTimerRef = useRef(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        const handleAuthExpired = () => {
+            setSession(null);
+            setAuthChecking(false);
+            localStorage.removeItem(AUTH_STORAGE_KEY);
+        };
+
+        window.addEventListener("yahata:auth-expired", handleAuthExpired);
+
+        const storedSession = loadSession();
+        if (!storedSession?.token) {
+            setSession(null);
+            setAuthChecking(false);
+        } else {
+            const expiresAt = Date.parse(storedSession.expiresAt);
+            if (storedSession.expiresAt && Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
+                clearStoredSession();
+                localStorage.removeItem(AUTH_STORAGE_KEY);
+                setSession(null);
+                setAuthChecking(false);
+            } else {
+                apiRequest("/auth/me")
+                    .then((payload) => {
+                        if (cancelled) return;
+                        const user = payload?.data || payload || {};
+                        const normalized = storeSession({
+                            ...storedSession,
+                            user: user.name || user.username || storedSession.user,
+                            username: user.username || storedSession.username,
+                            name: user.name || storedSession.name,
+                            nik: user.nik || "",
+                            role: user.role || storedSession.role,
+                            area: user.role === "admin" ? "Production Admin" : (storedSession.area || "Production Area"),
+                            permissions: user.permissions || storedSession.permissions,
+                        });
+                        setSession(normalized || storedSession);
+                    })
+                    .catch((err) => {
+                        if (cancelled) return;
+                        // Hanya logout jika server menolak token (401, sudah ditangani handler "auth-expired").
+                        // Jika backend mati/lambat/error sementara, sesi tetap dipakai (jangan paksa login ulang).
+                        if (err?.status === 401) {
+                            clearStoredSession();
+                            localStorage.removeItem(AUTH_STORAGE_KEY);
+                            setSession(null);
+                        } else {
+                            setSession(storedSession);
+                        }
+                    })
+                    .finally(() => {
+                        if (!cancelled) setAuthChecking(false);
+                    });
+            }
+        }
+
+        return () => {
+            cancelled = true;
+            window.removeEventListener("yahata:auth-expired", handleAuthExpired);
+        };
+    }, []);
 
     const handleLoginSuccess = (newSession) => {
         const normalized = storeSession(newSession) || newSession;
@@ -98,6 +161,25 @@ export default function App() {
             // abaikan jika storage diblokir
         }
     };
+
+    if (authChecking) {
+        return (
+            <div
+                style={{
+                    minHeight: "100vh",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: "#f8f9fa",
+                    color: "#525252",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                }}
+            >
+                Memeriksa sesi login...
+            </div>
+        );
+    }
 
     if (!session) {
         return (

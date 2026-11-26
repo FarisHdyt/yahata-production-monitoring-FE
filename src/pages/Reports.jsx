@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { MACHINES, DOWNTIME_CATEGORIES } from "../config";
 import FormingAnalyticsDashboard from "../components/FormingAnalyticsDashboard";
+import Skeleton from "../components/Skeleton.jsx";
+import useDelayedLoading from "../hooks/useDelayedLoading.js";
 import {
   fetchDowntimeEvents,
   fetchMasters,
@@ -12,31 +14,6 @@ const DOWNTIME_STORAGE_KEY = "yahataDowntimeEvents";
 const PRODUCTION_STORAGE_KEY = "yahataProductionRecords";
 const MASTER_STORAGE_KEY = "yahataMasterProduction";
 const SHIFT_PIC_STORAGE_KEY = "yahataShiftPicRecords";
-
-function safeReadArray(key) {
-  try {
-    const data = JSON.parse(localStorage.getItem(key) || "[]");
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
-}
-
-function loadDowntime() {
-  return safeReadArray(DOWNTIME_STORAGE_KEY);
-}
-
-function loadProduction() {
-  return safeReadArray(PRODUCTION_STORAGE_KEY);
-}
-
-function loadMasters() {
-  return safeReadArray(MASTER_STORAGE_KEY);
-}
-
-function loadShiftPic() {
-  return safeReadArray(SHIFT_PIC_STORAGE_KEY);
-}
 
 // Handover Shift 1 ke Shift 2 (14:00 - 14:15) masuk ke Shift 1
 function getShift(dateString) {
@@ -125,8 +102,10 @@ export default function Reports() {
   const [productionRecords, setProductionRecords] = useState([]);
   const [masters, setMasters] = useState([]);
   const [shiftPicRecords, setShiftPicRecords] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [hasLoadedData, setHasLoadedData] = useState(false);
+  const { showSkeleton } = useDelayedLoading(loading);
 
   const today = new Date().toLocaleDateString("en-CA");
 
@@ -151,6 +130,8 @@ export default function Reports() {
       setProductionRecords(Array.isArray(prod) ? prod : []);
       setMasters(Array.isArray(mst) ? mst : []);
       setShiftPicRecords(Array.isArray(pics) ? pics : []);
+      setHasLoadedData(true);
+      setLoadError("");
       try {
         localStorage.setItem(DOWNTIME_STORAGE_KEY, JSON.stringify(Array.isArray(dt) ? dt : []));
         localStorage.setItem(PRODUCTION_STORAGE_KEY, JSON.stringify(Array.isArray(prod) ? prod : []));
@@ -575,6 +556,8 @@ export default function Reports() {
           <p>Rekap aktivitas produksi, PIC, dan downtime area Forming.</p>
         </div>
 
+        {loadError && <div className="rp-info-note" role="alert">{loadError}</div>}
+
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
           <button
             className="rp-refresh-btn"
@@ -662,6 +645,10 @@ export default function Reports() {
       </div>
 
       <section className="rp-stats">
+        {showSkeleton ? (
+          <Skeleton variant="cards" count={4} />
+        ) : hasLoadedData ? (
+          <>
         <div className="rp-stat-card">
           <div className="rp-stat-icon navy">▤</div>
           <div>
@@ -697,14 +684,20 @@ export default function Reports() {
             <small>Dari {MACHINES.length} mesin</small>
           </div>
         </div>
+          </>
+        ) : null}
       </section>
 
-      <FormingAnalyticsDashboard
-        machineFilter={machineFilter}
-        productionRecords={filteredProduction}
-        downtimeRecords={filteredRecords}
-        masters={masters}
-      />
+      {showSkeleton ? (
+        <section className="rp-panel"><Skeleton variant="chart" count={12} /></section>
+      ) : hasLoadedData ? (
+        <FormingAnalyticsDashboard
+          machineFilter={machineFilter}
+          productionRecords={filteredProduction}
+          downtimeRecords={filteredRecords}
+          masters={masters}
+        />
+      ) : null}
 
       <section className="rp-panel rp-production-panel">
         <div className="rp-panel-heading">
@@ -730,7 +723,11 @@ export default function Reports() {
               </tr>
             </thead>
             <tbody>
-              {machineSummary.length === 0 ? (
+              {showSkeleton ? (
+                <Skeleton variant="table" rows={8} columns={8} />
+              ) : !hasLoadedData ? (
+                loadError ? <tr><td colSpan="8" className="rp-empty">Data laporan gagal dimuat dari backend.</td></tr> : null
+              ) : machineSummary.length === 0 ? (
                 <tr>
                   <td colSpan="8" className="rp-empty">
                     Belum ada data produksi maupun downtime pada periode ini.
@@ -781,7 +778,11 @@ export default function Reports() {
               </tr>
             </thead>
             <tbody>
-              {filteredProduction.length === 0 ? (
+              {showSkeleton ? (
+                <Skeleton variant="table" rows={6} columns={9} />
+              ) : !hasLoadedData ? (
+                loadError ? <tr><td colSpan="9" className="rp-empty">Data laporan gagal dimuat dari backend.</td></tr> : null
+              ) : filteredProduction.length === 0 ? (
                 <tr>
                   <td colSpan="9" className="rp-empty">
                     Tidak ada data produksi untuk filter ini.
@@ -821,7 +822,11 @@ export default function Reports() {
             <button onClick={exportCategorySummary}>Export CSV</button>
           </div>
 
-          {categorySummary.length === 0 ? (
+          {showSkeleton ? (
+            <Skeleton variant="list" rows={4} />
+          ) : !hasLoadedData ? (
+            loadError ? <div className="rp-empty">Data laporan gagal dimuat dari backend.</div> : null
+          ) : categorySummary.length === 0 ? (
             <div className="rp-empty">
               Belum ada data downtime pada periode ini.
             </div>
@@ -859,7 +864,9 @@ export default function Reports() {
           </div>
 
           <div className="rp-shift-summary">
-            {shiftSummary.map((item) => (
+            {showSkeleton ? (
+              <Skeleton variant="list" rows={2} />
+            ) : hasLoadedData ? shiftSummary.map((item) => (
               <div className="rp-shift-item" key={item.shift}>
                 <div className="rp-shift-number">
                   <span>{item.shift}</span>
@@ -869,7 +876,7 @@ export default function Reports() {
                   {formatDuration(item.minutes)}
                 </strong>
               </div>
-            ))}
+            )) : null}
           </div>
 
           <div className="rp-info-note">
@@ -905,7 +912,11 @@ export default function Reports() {
               </tr>
             </thead>
             <tbody>
-              {filteredRecords.length === 0 ? (
+              {showSkeleton ? (
+                <Skeleton variant="table" rows={6} columns={9} />
+              ) : !hasLoadedData ? (
+                loadError ? <tr><td colSpan="9" className="rp-empty">Data laporan gagal dimuat dari backend.</td></tr> : null
+              ) : filteredRecords.length === 0 ? (
                 <tr>
                   <td colSpan="9" className="rp-empty">
                     Tidak ada data downtime untuk filter ini.
