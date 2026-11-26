@@ -114,13 +114,22 @@ export default function Downtime() {
   const [shiftFilter, setShiftFilter] = useState("all");
   const [machineFilter, setMachineFilter] = useState("all");
 
+  // Hanya muat data 31 hari sampai tanggal filter (bukan seluruh riwayat) agar tetap cepat saat data menumpuk.
+  const buildRange = () => {
+    if (!dateFilter) return {};
+    const from = new Date(`${dateFilter}T00:00:00`);
+    from.setDate(from.getDate() - 31);
+    return { startDate: toLocalDateString(from), endDate: dateFilter };
+  };
+
   const syncExternal = async (showLoading = false) => {
     if (showLoading) setLoading(true);
     try {
+      const range = buildRange();
       const [ev, pics, prods] = await Promise.all([
-        fetchDowntimeEvents(),
-        fetchShiftAssignments(),
-        fetchProductionRecords(),
+        fetchDowntimeEvents(range),
+        fetchShiftAssignments(range),
+        fetchProductionRecords(range),
       ]);
       setEvents(ev || []);
       setShiftPicList(pics || []);
@@ -147,7 +156,7 @@ export default function Downtime() {
       window.removeEventListener("yahata-storage-updated", handler);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [dateFilter]);
 
   const knownPics = useMemo(() => {
     const list = [

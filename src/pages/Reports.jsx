@@ -139,11 +139,13 @@ export default function Reports() {
     setLoading(true);
     setLoadError("");
     try {
+      // Hanya muat rentang tanggal yang dipilih (bukan seluruh riwayat).
+      const range = { startDate, endDate };
       const [dt, prod, mst, pics] = await Promise.all([
-        fetchDowntimeEvents(),
-        fetchProductionRecords(),
+        fetchDowntimeEvents(range),
+        fetchProductionRecords(range),
         fetchMasters(),
-        fetchShiftAssignments(),
+        fetchShiftAssignments(range),
       ]);
       setDowntimeRecords(Array.isArray(dt) ? dt : []);
       setProductionRecords(Array.isArray(prod) ? prod : []);
@@ -172,7 +174,7 @@ export default function Reports() {
       window.removeEventListener("yahata-storage-updated", handler);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [startDate, endDate]);
 
   const filteredRecords = useMemo(() => {
     return downtimeRecords

@@ -137,9 +137,9 @@ button:hover,
 .rp-reset-btn:hover,
 .prod-submit-btn:hover,
 .mp-row-reset-btn:hover {
-  background-color: #141414 !important;
-  color: #ffffff !important;
-  border-color: #141414 !important;
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  border-color: #9ca3af !important;
 }
 
 /* Input & select */

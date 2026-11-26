@@ -87,7 +87,26 @@ function extractMessage(payload, fallback) {
   return fallback;
 }
 
-export async function apiRequest(path, options = {}) {
+// Request GET yang identik dan sedang berjalan digabung jadi satu (mencegah request ganda,
+// mis. efek React StrictMode di mode dev atau muat ulang beruntun). Hanya untuk GET tanpa body.
+const inflightGets = new Map();
+
+export function apiRequest(path, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  if (method !== "GET" || options.body) return apiRequestRaw(path, options);
+
+  const url = path.startsWith("http") ? path : `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+  const token = getStoredSession()?.token || "";
+  const key = `${token}|${url}`;
+
+  if (inflightGets.has(key)) return inflightGets.get(key);
+
+  const promise = apiRequestRaw(path, options).finally(() => inflightGets.delete(key));
+  inflightGets.set(key, promise);
+  return promise;
+}
+
+async function apiRequestRaw(path, options = {}) {
   const url = path.startsWith("http") ? path : `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
   const response = await fetch(url, {
     ...options,
