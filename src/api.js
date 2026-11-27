@@ -1,4 +1,4 @@
-﻿const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://192.168.2.98:8000/api").replace(/\/$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api").replace(/\/$/, "");
 const SESSION_KEY = "yahataAuthSession";
 
 function normalizeSession(raw) {

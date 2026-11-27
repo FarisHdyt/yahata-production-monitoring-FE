@@ -8,7 +8,7 @@ import MasterProduction from "./pages/MasterProduction.jsx";
 import Downtime from "./pages/Downtime.jsx";
 import ShiftPic from "./pages/ShiftPic.jsx";
 import Reports from "./pages/Reports.jsx";
-import { apiRequest, clearStoredSession, getStoredSession, loginSso, storeSession } from "./api.js"; // <-- UBAH (tambah loginSso)
+import { apiRequest, clearStoredSession, getApiBaseUrl, getStoredSession, loginSso, storeSession } from "./api.js"; // <-- UBAH (tambah loginSso)
 
 import yahataLogo from "./assets/yahata-logo.png";
 
@@ -104,6 +104,7 @@ const MENU = [
 export default function App() {
     const [session, setSession] = useState(loadSession);
     const [authChecking, setAuthChecking] = useState(true);
+    const [backendStatus, setBackendStatus] = useState("checking");
     const [ssoError, setSsoError] = useState(""); // <-- BARU
     const [activePage, setActivePage] = useState("dashboard");
     const [sidebarExpanded, setSidebarExpanded] = useState(false);
@@ -177,6 +178,34 @@ export default function App() {
         return () => {
             cancelled = true;
             window.removeEventListener("yahata:auth-expired", handleAuthExpired);
+        };
+    }, []);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const checkBackend = async () => {
+            if (!cancelled) setBackendStatus("checking");
+            try {
+                await fetch(`${getApiBaseUrl()}/auth/me`, {
+                    method: "GET",
+                    cache: "no-store",
+                    headers: { Accept: "application/json" },
+                });
+                if (!cancelled) setBackendStatus("live");
+            } catch {
+                if (!cancelled) setBackendStatus("offline");
+            }
+        };
+
+        checkBackend();
+        const intervalId = window.setInterval(checkBackend, 30000);
+        window.addEventListener("focus", checkBackend);
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(intervalId);
+            window.removeEventListener("focus", checkBackend);
         };
     }, []);
 
@@ -349,8 +378,21 @@ export default function App() {
 
                     <div className="topbar-right">
                         <span className="system-status">
-                            <span className="status-dot"></span>
-                            Live Backend
+                            <span
+                                className="status-dot"
+                                style={{
+                                    background: backendStatus === "live"
+                                        ? "#16a34a"
+                                        : backendStatus === "offline"
+                                            ? "#dc2626"
+                                            : "#e6a23c",
+                                }}
+                            ></span>
+                            {backendStatus === "live"
+                                ? "Live Backend"
+                                : backendStatus === "offline"
+                                    ? "Backend Offline"
+                                    : "Memeriksa Backend"}
                         </span>
 
                         <div className="user-profile">
