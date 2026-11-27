@@ -171,3 +171,35 @@ export function unwrapCollection(payload) {
   if (payload && Array.isArray(payload.data)) return payload.data;
   return [];
 }
+
+// Login lewat tiket Superapps YFI (SSO). Dipanggil dari App.jsx saat halaman /sso dibuka. // <-- BARU
+// Membuang sesi lama lebih dulu, lalu menyimpan sesi baru dengan bentuk yang sama seperti login biasa.
+export async function loginSso(tiket) {
+  clearStoredSession();
+
+  const payload = await apiRequest("/auth/sso", {
+    method: "POST",
+    body: JSON.stringify({ tiket }),
+  });
+
+  const data = payload?.data || payload || {};
+  const user = data.user || {};
+  const role = user.role || "operator";
+
+  const session = storeSession({
+    user: user.name || user.username || "User",
+    username: user.username || "",
+    name: user.name || user.username || "",
+    nik: user.nik || "",
+    role,
+    area: role === "admin" ? "Production Admin" : "Line Forming",
+    token: data.token,
+    tokenType: data.tokenType || "Bearer",
+    expiresAt: data.expiresAt || null,
+    loggedInAt: new Date().toISOString(),
+    permissions: user.permissions || null,
+  });
+
+  if (!session) throw new Error("Respons login SSO tidak valid. Buka lagi dari Superapps.");
+  return session;
+}

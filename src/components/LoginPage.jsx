@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+﻿import { useEffect, useState } from "react"; // <-- UBAH (tambah useEffect)
 import { apiRequest, storeSession } from "../api";
 
 const ROLE_AREAS = {
@@ -70,12 +70,17 @@ function EyeOffIcon() {
   );
 }
 
-export default function LoginPage({ onLogin, onLoginSuccess, yahataLogo }) {
+export default function LoginPage({ onLogin, onLoginSuccess, yahataLogo, initialError = "" }) { // <-- UBAH
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState(initialError); // <-- UBAH
   const [loading, setLoading] = useState(false);
+
+  // Pesan dari alur SSO (mis. tiket kedaluwarsa atau NIK belum terdaftar). // <-- BARU
+  useEffect(() => {
+    if (initialError) setErrorMsg(initialError);
+  }, [initialError]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

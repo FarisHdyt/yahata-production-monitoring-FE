@@ -249,7 +249,6 @@ button {
   font-weight: 700;
 }
 
-.filter-item select,
 .filter-item input {
   width: 100%;
   min-height: 36px;
@@ -261,7 +260,6 @@ button {
   outline: none;
 }
 
-.filter-item select:focus,
 .filter-item input:focus {
   border-color: var(--blue);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
@@ -1381,9 +1379,7 @@ button {
 }
 
 .production-field input,
-.production-field select,
-.production-filters input,
-.production-filters select {
+.production-filters input {
     width: 100%;
     min-width: 0;
     height: 39px;
@@ -1398,9 +1394,7 @@ button {
 }
 
 .production-field input:focus,
-.production-field select:focus,
-.production-filters input:focus,
-.production-filters select:focus {
+.production-filters input:focus {
     border-color: #1769aa;
     box-shadow: 0 0 0 3px rgba(23,105,170,0.08);
 }
@@ -2342,9 +2336,7 @@ button {
 }
 
 .dt-filter-controls input,
-.dt-filter-controls select,
 .dt-modal-body input,
-.dt-modal-body select,
 .dt-modal-body textarea {
   width: 100%;
   box-sizing: border-box;
@@ -2359,9 +2351,7 @@ button {
 }
 
 .dt-filter-controls input:focus,
-.dt-filter-controls select:focus,
 .dt-modal-body input:focus,
-.dt-modal-body select:focus,
 .dt-modal-body textarea:focus {
   border-color: #1769aa;
   box-shadow: 0 0 0 3px rgba(23, 105, 170, .08);
@@ -3146,9 +3136,7 @@ button {
 }
 
 .sp-filters input,
-.sp-filters select,
 .sp-modal-body input,
-.sp-modal-body select,
 .sp-modal-body textarea {
   width: 100%;
   box-sizing: border-box;
@@ -3163,9 +3151,7 @@ button {
 }
 
 .sp-filters input:focus,
-.sp-filters select:focus,
 .sp-modal-body input:focus,
-.sp-modal-body select:focus,
 .sp-modal-body textarea:focus {
   border-color: #1769aa;
   box-shadow: 0 0 0 3px rgba(23,105,170,.08);
@@ -3528,8 +3514,7 @@ button {
   font-weight: 700;
 }
 
-.rp-filters input,
-.rp-filters select {
+.rp-filters input {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -3542,8 +3527,7 @@ button {
   font-size: 12px;
 }
 
-.rp-filters input:focus,
-.rp-filters select:focus {
+.rp-filters input:focus {
   border-color: #1769aa;
   box-shadow: 0 0 0 3px rgba(23,105,170,.08);
 }

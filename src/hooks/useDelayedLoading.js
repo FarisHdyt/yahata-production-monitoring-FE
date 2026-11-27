@@ -3,40 +3,50 @@ import { useEffect, useRef, useState } from "react";
 export default function useDelayedLoading(isLoading, delay = 200, minimumVisible = 300) {
   const [showSkeleton, setShowSkeleton] = useState(false);
   const [isInitialPending, setIsInitialPending] = useState(true);
-  const initialLoadFinished = useRef(false);
-  const skeletonShownAt = useRef(null);
+  const finished = useRef(false);
+  const shownAt = useRef(null);
+  const showTimer = useRef(null);
+  const hideTimer = useRef(null);
 
   useEffect(() => {
-    if (initialLoadFinished.current) return undefined;
+    if (finished.current) return;
 
-    let timer;
     if (isLoading) {
-      timer = setTimeout(() => {
-        skeletonShownAt.current = Date.now();
-        setShowSkeleton(true);
-      }, delay);
-    } else {
-      initialLoadFinished.current = true;
-      const visibleFor = skeletonShownAt.current === null
-        ? minimumVisible
-        : Date.now() - skeletonShownAt.current;
-      const remaining = skeletonShownAt.current === null
-        ? 0
-        : Math.max(0, minimumVisible - visibleFor);
-
-      if (remaining === 0) {
-        setShowSkeleton(false);
-        setIsInitialPending(false);
-      } else {
-        timer = setTimeout(() => {
-          setShowSkeleton(false);
-          setIsInitialPending(false);
-        }, remaining);
+      if (showTimer.current === null) {
+        showTimer.current = setTimeout(() => {
+          showTimer.current = null;
+          shownAt.current = Date.now();
+          setShowSkeleton(true);
+        }, delay);
       }
+      return;
     }
 
-    return () => clearTimeout(timer);
+    finished.current = true;
+    clearTimeout(showTimer.current);
+    showTimer.current = null;
+
+    const remaining = shownAt.current === null
+      ? 0
+      : Math.max(0, minimumVisible - (Date.now() - shownAt.current));
+
+    const finish = () => {
+      hideTimer.current = null;
+      setShowSkeleton(false);
+      setIsInitialPending(false);
+    };
+
+    if (remaining === 0) finish();
+    else hideTimer.current = setTimeout(finish, remaining);
   }, [isLoading, delay, minimumVisible]);
+
+  // Bersihkan timer hanya saat komponen dilepas (bukan tiap isLoading berubah).
+  useEffect(() => () => {
+    clearTimeout(showTimer.current);
+    clearTimeout(hideTimer.current);
+    showTimer.current = null;
+    hideTimer.current = null;
+  }, []);
 
   return { showSkeleton, isInitialPending };
 }

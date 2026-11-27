@@ -8,11 +8,44 @@ import MasterProduction from "./pages/MasterProduction.jsx";
 import Downtime from "./pages/Downtime.jsx";
 import ShiftPic from "./pages/ShiftPic.jsx";
 import Reports from "./pages/Reports.jsx";
-import { apiRequest, clearStoredSession, getStoredSession, storeSession } from "./api.js";
+import { apiRequest, clearStoredSession, getStoredSession, loginSso, storeSession } from "./api.js"; // <-- UBAH (tambah loginSso)
 
 import yahataLogo from "./assets/yahata-logo.png";
 
 const AUTH_STORAGE_KEY = "yahataAuthSession";
+
+// ---------- SSO Superapps YFI ---------- // <-- BARU (seluruh blok sampai ssoResult)
+// Tiket dibaca SEKALI saat halaman /sso dibuka, lalu dihapus dari alamat (tidak tersisa di riwayat browser).
+// Dikirim di sini (di luar komponen), bukan di useEffect, karena StrictMode menjalankan useEffect 2x
+// sedangkan tiket hanya bisa dipakai sekali.
+function readSsoTicket() {
+    if (typeof window === "undefined" || window.location.pathname !== "/sso") return null;
+
+    let ticket = "";
+    try {
+        ticket = decodeURIComponent(window.location.hash.match(/tiket=([^&]+)/)?.[1] ?? "");
+    } catch {
+        ticket = "";
+    }
+
+    window.history.replaceState(null, "", "/");
+    return ticket;
+}
+
+const ssoTicket = readSsoTicket();
+const ssoResult = ssoTicket === null
+    ? Promise.resolve({ ok: true })
+    : ssoTicket
+        ? loginSso(ssoTicket).then(
+            () => ({ ok: true }),
+            (err) => ({
+                ok: false,
+                message: err?.status
+                    ? err.message
+                    : "Server tidak dapat dihubungi. Coba lagi, atau login dengan username dan password.",
+            })
+        )
+        : Promise.resolve({ ok: false, message: "Tiket masuk tidak ditemukan. Buka lagi dari Superapps." });
 
 function loadSession() {
   try {
@@ -71,6 +104,7 @@ const MENU = [
 export default function App() {
     const [session, setSession] = useState(loadSession);
     const [authChecking, setAuthChecking] = useState(true);
+    const [ssoError, setSsoError] = useState(""); // <-- BARU
     const [activePage, setActivePage] = useState("dashboard");
     const [sidebarExpanded, setSidebarExpanded] = useState(false);
     const closeTimerRef = useRef(null);
@@ -85,6 +119,7 @@ export default function App() {
 
         window.addEventListener("yahata:auth-expired", handleAuthExpired);
 
+        const checkSession = () => { // <-- UBAH (logika lama dibungkus fungsi ini)
         const storedSession = loadSession();
         if (!storedSession?.token) {
             setSession(null);
@@ -130,6 +165,14 @@ export default function App() {
                     });
             }
         }
+        };
+
+        // Tunggu hasil SSO (jika halaman /sso) sebelum memeriksa sesi tersimpan. // <-- BARU
+        ssoResult.then((result) => {
+            if (cancelled) return;
+            if (!result.ok) setSsoError(result.message);
+            checkSession();
+        });
 
         return () => {
             cancelled = true;
@@ -184,6 +227,7 @@ export default function App() {
     if (!session) {
         return (
             <LoginPage
+                initialError={ssoError} // <-- BARU
                 onLoginSuccess={handleLoginSuccess}
                 yahataLogo={yahataLogo}
             />
